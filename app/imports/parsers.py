@@ -3,7 +3,12 @@ CSV and Excel file parsers.
 Both return the same ParseResult shape so callers don't care about format.
 """
 
+import csv
+import io
+from collections import Counter
 from dataclasses import dataclass, field
+
+import openpyxl
 
 
 @dataclass
@@ -21,6 +26,15 @@ class ParseResult:
     sheets: list[SheetInfo] = field(default_factory=list)  # Excel only
 
 
+# Keywords used to guess entity type from sheet name / column names
+_ENTITY_KEYWORDS: dict[str, list[str]] = {
+    "location": ["location", "lokacija", "building", "room", "floor", "rack", "warehouse"],
+    "employee": ["employee", "zaposlenik", "person", "staff", "worker", "hr"],
+    "vendor": ["vendor", "supplier", "dobavljac", "dobavljač", "company", "oib", "vat"],
+    "asset": ["asset", "imovina", "serial", "inventory", "device", "laptop", "server"],
+}
+
+
 class CsvParser:
     """
     Parse CSV files with auto-delimiter detection.
@@ -28,17 +42,53 @@ class CsvParser:
     """
 
     def parse(self, content: bytes, encoding: str = "utf-8") -> ParseResult:
+        try:
+            text = content.decode(encoding)
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+
+        delimiter = self._detect_delimiter(text)
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
+        headers = list(reader.fieldnames or [])
+
+        preview_rows: list[dict] = []
+        total = 0
+        for row in reader:
+            total += 1
+            if total <= 10:
+                preview_rows.append(dict(row))
+
+        return ParseResult(
+            headers=headers,
+            preview_rows=preview_rows,
+            total_rows=total,
+        )
+
+    def _detect_delimiter(self, text: str) -> str:
         """
-        Detect delimiter, parse headers and first 10 rows.
-        Returns ParseResult.
+        Try ; , \t in order. Score each by column consistency across first 20 rows.
+        Higher consistency + higher column count wins. Priority order breaks ties.
         """
-        # TODO: implement
-        # Hints:
-        #   - decode content with encoding, fallback to latin-1
-        #   - try csv.Sniffer().sniff() on first 4KB
-        #   - if Sniffer picks wrong delimiter, override with priority list
-        #   - count consistent columns per row to validate delimiter choice
-        raise NotImplementedError
+        lines = [l for l in text.split("\n")[:20] if l.strip()]
+        if not lines:
+            return ","
+
+        best_delim = ","
+        best_score = 0
+
+        for delim in [";", ",", "\t"]:
+            counts = [len(line.split(delim)) for line in lines]
+            if not counts or max(counts) <= 1:
+                continue
+            # Score: rows sharing the modal column count × that count
+            mode_count = Counter(counts).most_common(1)[0][0]
+            consistency = sum(1 for c in counts if c == mode_count)
+            score = consistency * mode_count
+            if score > best_score:
+                best_score = score
+                best_delim = delim
+
+        return best_delim
 
 
 class ExcelParser:
@@ -48,24 +98,83 @@ class ExcelParser:
     """
 
     def parse(self, content: bytes, sheet_name: str | None = None) -> ParseResult:
-        """
-        If sheet_name given: parse that sheet only.
-        If None: analyse all sheets, return SheetInfo list with suggested order.
-        """
-        # TODO: implement
-        # Hints:
-        #   - openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        #   - detect entity type per sheet from sheet name + column names
-        #   - locations always get suggested_order=1
-        #   - detect cross-sheet references: column looks like location_name/employee_name
-        raise NotImplementedError
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+
+        if sheet_name:
+            if sheet_name not in wb.sheetnames:
+                raise ValueError(f"Sheet '{sheet_name}' not found. Available: {wb.sheetnames}")
+            ws = wb[sheet_name]
+            return self._parse_sheet(ws)
+
+        # Analyse all sheets, return SheetInfo list + first-sheet preview
+        sheets = self._analyse_sheets(wb)
+        first_sheet_name = min(sheets, key=lambda s: s.suggested_order).name
+        result = self._parse_sheet(wb[first_sheet_name])
+        result.sheets = sheets
+        return result
+
+    def _parse_sheet(self, ws) -> ParseResult:
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return ParseResult(headers=[], preview_rows=[], total_rows=0)
+
+        headers = [str(cell) if cell is not None else "" for cell in rows[0]]
+        data_rows = rows[1:]
+        total = len(data_rows)
+
+        preview_rows = []
+        for row in data_rows[:10]:
+            preview_rows.append({
+                headers[i]: (str(cell) if cell is not None else "")
+                for i, cell in enumerate(row)
+                if i < len(headers)
+            })
+
+        return ParseResult(headers=headers, preview_rows=preview_rows, total_rows=total)
+
+    def _analyse_sheets(self, wb) -> list[SheetInfo]:
+        sheets = []
+        all_names = wb.sheetnames
+
+        for i, name in enumerate(all_names):
+            ws = wb[name]
+            # Read only first row for header analysis
+            first_row = next(ws.iter_rows(values_only=True, max_row=1), ())
+            headers = [str(c).lower() for c in first_row if c is not None]
+            entity_type = self._detect_entity_type(name, headers)
+
+            # Locations always first — everything else may reference them
+            if entity_type == "location":
+                suggested_order = 1
+            elif entity_type == "employee":
+                suggested_order = 2
+            elif entity_type == "vendor":
+                suggested_order = 3
+            else:
+                suggested_order = 10 + i  # assets and unknowns last
+
+            sheets.append(SheetInfo(
+                name=name,
+                suggested_order=suggested_order,
+                likely_entity_type=entity_type,
+            ))
+
+        sheets.sort(key=lambda s: s.suggested_order)
+        return sheets
 
     def _detect_entity_type(self, sheet_name: str, headers: list[str]) -> str | None:
-        """Guess entity type from sheet name and headers."""
-        # TODO: implement keyword matching
-        raise NotImplementedError
+        combined = sheet_name.lower() + " " + " ".join(headers)
+        scores: dict[str, int] = {}
+        for entity, keywords in _ENTITY_KEYWORDS.items():
+            scores[entity] = sum(1 for kw in keywords if kw in combined)
+        best = max(scores, key=lambda k: scores[k])
+        return best if scores[best] > 0 else None
 
     def _detect_dependencies(self, headers: list[str], all_sheet_names: list[str]) -> list[str]:
-        """Return sheet names that this sheet likely references."""
-        # TODO: implement
-        raise NotImplementedError
+        """Return sheet names that this sheet likely references via a column name match."""
+        deps = []
+        for sheet in all_sheet_names:
+            sheet_lower = sheet.lower()
+            if any(sheet_lower in h.lower() for h in headers):
+                deps.append(sheet)
+        return deps

@@ -25,7 +25,7 @@ class ImportJob(Base):
     processed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
@@ -71,9 +71,8 @@ class ImportConflict(Base):
     )
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(nullable=False)  # existing record that conflicts
-    locked_by_job_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("import_jobs.id"), nullable=True
-    )  # set if another job holds a Valkey lock on this entity
+    # Lock info lives in Valkey (key: import_lock:{entity_type}:{entity_id}), not in DB.
+    # Read from Valkey when serving this conflict via API.
 
     resolution: Mapped[str | None] = mapped_column(String(50), nullable=True)  # keep_existing | use_new | merge
     merge_decisions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # {field: "new"|"existing"}

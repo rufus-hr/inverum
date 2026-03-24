@@ -16,7 +16,7 @@ from app.celery_app import celery_app
     soft_time_limit=60 * 30,   # 30 min soft limit
     time_limit=60 * 35,        # 35 min hard limit
 )
-def validate_import(self, job_id: str) -> dict:
+def validate_import(self, job_id: str) -> dict[str, int]:
     """
     Main validation task for an ImportJob.
     Spawns chunk subtasks, waits for all, then aggregates.
@@ -41,13 +41,14 @@ def validate_import(self, job_id: str) -> dict:
     name="app.tasks.import_validation.validate_chunk",
     queue="inverum-worker-imports",
 )
-def validate_chunk(self, job_id: str, rows: list[dict], row_offset: int) -> dict:
+def validate_chunk(self, job_id: str, rows: list[dict], row_offset: int) -> dict[str, int]:
     """
     Validate a chunk of rows.
     Creates ImportRecord for each row (valid/conflict/error).
     Acquires Valkey locks for conflicting entities.
 
-    Returns: {valid: int, conflict: int, error: int}
+    Returns: {"valid": int, "conflict": int, "error": int}
+    Example: {"valid": 950, "conflict": 30, "error": 20}
     """
     # TODO: implement
     # Per row:
