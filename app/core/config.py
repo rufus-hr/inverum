@@ -20,6 +20,12 @@ class Settings(BaseSettings):
 
     INTERNAL_API_KEY: str = "change-me-in-production"
 
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "inverum"
+    MINIO_SECRET_KEY: str = "devpassword"
+    MINIO_BUCKET: str = "inverum-dev"
+    MINIO_SECURE: bool = False
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
