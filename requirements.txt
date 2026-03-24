@@ -41,3 +41,4 @@ uvicorn==0.42.0
 vine==5.1.0
 wcwidth==0.6.0
 openpyxl==3.1.5
+minio==7.2.20
