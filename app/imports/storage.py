@@ -1,48 +1,53 @@
-"""
-File storage abstraction — S3-ready interface.
-Current implementation: local filesystem.
-Phase 2: swap implementation for S3/MinIO without changing callers.
-"""
-
-import os
+import io
 import uuid
-from pathlib import Path
+from minio import Minio
+from minio.error import S3Error
+from app.core.config import settings
 
-# Base directory for import file storage.
-# Override with IMPORT_STORAGE_ROOT env var for production.
-_STORAGE_ROOT = Path(os.getenv("IMPORT_STORAGE_ROOT", "/tmp/inverum-imports"))
+
+def _client() -> Minio:
+    return Minio(
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
+    )
+
+
+def _build_path(tenant_id: uuid.UUID, job_id: uuid.UUID, ext: str) -> str:
+    return f"imports/{tenant_id}/{job_id}/original.{ext}"
+
+
+def _ext(filename: str) -> str:
+    parts = filename.rsplit(".", 1)
+    return parts[1].lower() if len(parts) == 2 else "bin"
 
 
 class FileStorage:
-    def save(
-        self,
-        tenant_id: uuid.UUID,
-        job_id: uuid.UUID,
-        filename: str,
-        content: bytes,
-    ) -> str:
-        """
-        Save uploaded file and return the storage path.
-        Path format: /imports/{tenant_id}/{job_id}/original.{ext}
-        """
-        # TODO: implement
-        raise NotImplementedError
+    def save(self, tenant_id: uuid.UUID, job_id: uuid.UUID, filename: str, content: bytes) -> str:
+        path = _build_path(tenant_id, job_id, _ext(filename))
+        _client().put_object(
+            settings.MINIO_BUCKET,
+            path,
+            io.BytesIO(content),
+            length=len(content),
+            content_type="application/octet-stream",
+        )
+        return path
 
     def read(self, path: str) -> bytes:
-        """Read file content from storage path."""
-        # TODO: implement
-        raise NotImplementedError
+        response = _client().get_object(settings.MINIO_BUCKET, path)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
 
     def delete(self, path: str) -> None:
-        """Delete file from storage."""
-        # TODO: implement
-        raise NotImplementedError
-
-    def _ext(self, filename: str) -> str:
-        return Path(filename).suffix.lower().lstrip(".")
-
-    def _build_path(self, tenant_id: uuid.UUID, job_id: uuid.UUID, ext: str) -> Path:
-        return _STORAGE_ROOT / "imports" / str(tenant_id) / str(job_id) / f"original.{ext}"
+        try:
+            _client().remove_object(settings.MINIO_BUCKET, path)
+        except S3Error:
+            pass
 
 
 storage = FileStorage()
