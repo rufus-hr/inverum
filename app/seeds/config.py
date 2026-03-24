@@ -302,6 +302,178 @@ LOCATION_TYPES = [
     },
 ]
 
+ASSET_FIELDS = [
+    # --- Compute / PC / Laptop / Server ---
+    {
+        "category": "asset_field",
+        "code": "cpu",
+        "label": "CPU",
+        "is_system": True,
+        "display_order": 10,
+        "metadata_": {"asset_types": ["laptop", "desktop", "server", "workstation"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "cpu_count",
+        "label": "CPU Count",
+        "is_system": True,
+        "display_order": 11,
+        "metadata_": {"asset_types": ["server"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "ram",
+        "label": "RAM",
+        "is_system": True,
+        "display_order": 20,
+        "metadata_": {"asset_types": ["laptop", "desktop", "server", "workstation"], "unit": "GB"},
+    },
+    {
+        "category": "asset_field",
+        "code": "storage",
+        "label": "Storage",
+        "is_system": True,
+        "display_order": 30,
+        "metadata_": {"asset_types": ["laptop", "desktop", "server", "workstation"], "unit": "GB"},
+    },
+    {
+        "category": "asset_field",
+        "code": "os",
+        "label": "Operating System",
+        "is_system": True,
+        "display_order": 40,
+        "metadata_": {"asset_types": ["laptop", "desktop", "server", "workstation"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "display_size",
+        "label": "Display Size",
+        "is_system": True,
+        "display_order": 50,
+        "metadata_": {"asset_types": ["laptop", "monitor"], "unit": "inch"},
+    },
+
+    # --- Network ---
+    {
+        "category": "asset_field",
+        "code": "port_count",
+        "label": "Port Count",
+        "is_system": True,
+        "display_order": 60,
+        "metadata_": {"asset_types": ["switch", "patch_panel"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "port_speed",
+        "label": "Port Speed",
+        "is_system": True,
+        "display_order": 61,
+        "metadata_": {"asset_types": ["switch"], "unit": "Gbps"},
+    },
+    {
+        "category": "asset_field",
+        "code": "uplink_count",
+        "label": "Uplink Count",
+        "is_system": True,
+        "display_order": 62,
+        "metadata_": {"asset_types": ["switch"]},
+    },
+
+    # --- Printer / Toner ---
+    {
+        "category": "asset_field",
+        "code": "toner_black",
+        "label": "Toner Black",
+        "is_system": True,
+        "display_order": 70,
+        "metadata_": {"asset_types": ["printer"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "toner_cyan",
+        "label": "Toner Cyan",
+        "is_system": True,
+        "display_order": 71,
+        "metadata_": {"asset_types": ["printer"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "toner_magenta",
+        "label": "Toner Magenta",
+        "is_system": True,
+        "display_order": 72,
+        "metadata_": {"asset_types": ["printer"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "toner_yellow",
+        "label": "Toner Yellow",
+        "is_system": True,
+        "display_order": 73,
+        "metadata_": {"asset_types": ["printer"]},
+    },
+    {
+        "category": "asset_field",
+        "code": "print_technology",
+        "label": "Print Technology",
+        "is_system": True,
+        "display_order": 74,
+        "metadata_": {"asset_types": ["printer"]},
+    },
+
+    # --- Power ---
+    {
+        "category": "asset_field",
+        "code": "capacity_kva",
+        "label": "Capacity (kVA)",
+        "is_system": True,
+        "display_order": 80,
+        "metadata_": {"asset_types": ["ups", "pdu", "generator"], "unit": "kVA"},
+    },
+    {
+        "category": "asset_field",
+        "code": "battery_runtime",
+        "label": "Battery Runtime",
+        "is_system": True,
+        "display_order": 81,
+        "metadata_": {"asset_types": ["ups"], "unit": "min"},
+    },
+
+    # --- Universal ---
+    {
+        "category": "asset_field",
+        "code": "mac_address",
+        "label": "MAC Address",
+        "is_system": True,
+        "display_order": 90,
+        "metadata_": {"asset_types": []},  # empty = applies to all
+    },
+    {
+        "category": "asset_field",
+        "code": "ip_address",
+        "label": "IP Address",
+        "is_system": True,
+        "display_order": 91,
+        "metadata_": {"asset_types": []},
+    },
+    {
+        "category": "asset_field",
+        "code": "firmware_version",
+        "label": "Firmware Version",
+        "is_system": True,
+        "display_order": 92,
+        "metadata_": {"asset_types": []},
+    },
+    {
+        "category": "asset_field",
+        "code": "color",
+        "label": "Color",
+        "is_system": True,
+        "display_order": 93,
+        "metadata_": {"asset_types": []},
+    },
+]
+
 ALL_SYSTEM_SEEDS = (
     ASSET_STATUSES
     + MOBILITY_PROFILES
@@ -309,4 +481,5 @@ ALL_SYSTEM_SEEDS = (
     + EMPLOYMENT_TYPES
     + VENDOR_TYPES
     + LOCATION_TYPES
+    + ASSET_FIELDS
 )
