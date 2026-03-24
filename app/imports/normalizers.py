@@ -22,15 +22,26 @@ class FieldNormalizer:
     Rules are per-field. Unknown fields pass through as-is.
     """
 
+    # Maps field name → method name (string). Resolved via getattr in normalize().
+    _FIELD_METHOD_MAP: dict[str, str] = {
+        "ram": "_normalize_capacity",
+        "storage": "_normalize_capacity",
+        "purchase_date": "_normalize_date",
+        "warranty_expiry": "_normalize_date",
+        "oib": "_normalize_oib",
+        "vat_id": "_normalize_vatid",
+        "is_active": "_normalize_boolean",
+    }
+
     def normalize(self, field: str, value: str) -> NormalizedValue:
         """
         Dispatch to per-field normalizer.
         Returns NormalizedValue with parsed result.
         """
         value = value.strip()
-        method = self._dispatch.get(field)
-        if method:
-            return method(self, value)
+        method_name = self._FIELD_METHOD_MAP.get(field)
+        if method_name:
+            return getattr(self, method_name)(value)
         return NormalizedValue(value=value, original=value, confidence=1.0, warning=None)
 
     def _normalize_capacity(self, value: str) -> NormalizedValue:
@@ -69,17 +80,6 @@ class FieldNormalizer:
         """da/ne/yes/no/true/false/1/0 → bool"""
         # TODO: implement
         raise NotImplementedError
-
-    # Dispatch table — maps field name to normalizer method
-    _dispatch: dict = {
-        "ram": _normalize_capacity,
-        "storage": _normalize_capacity,
-        "purchase_date": _normalize_date,
-        "warranty_expiry": _normalize_date,
-        "oib": _normalize_oib,
-        "vat_id": _normalize_vatid,
-        "is_active": _normalize_boolean,
-    }
 
 
 normalizer = FieldNormalizer()
