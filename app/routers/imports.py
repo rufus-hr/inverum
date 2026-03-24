@@ -1,9 +1,15 @@
 import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.dependencies.db import get_db
 from app.dependencies.auth import get_current_user, require_permission
+from app.imports.parsers import CsvParser, ExcelParser
+from app.imports.storage import storage
+from app.models.import_job import ImportJob
 from app.models.user import User
 from app.schemas.import_job import (
     ApiImportRequest,
@@ -41,13 +47,43 @@ async def upload_file(
     Upload CSV or Excel file. Creates ImportJob with status=draft.
     Returns detected headers, 10-row preview, and sheet list (Excel only).
     """
-    # TODO: implement
-    # 1. Validate file extension and size
-    # 2. Detect format, call CsvParser or ExcelParser
-    # 3. FileStorage.save()
-    # 4. Create ImportJob(status="draft", expires_at=now+24h)
-    # 5. Return UploadResponse
-    raise HTTPException(status_code=501, detail="Not implemented")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=422, detail=f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx")
+
+    content = await file.read()
+    if len(content) > _MAX_FILE_SIZE:
+        raise HTTPException(status_code=422, detail="File exceeds 50MB limit")
+
+    if ext == ".csv":
+        result = CsvParser().parse(content)
+    else:
+        result = ExcelParser().parse(content)
+
+    job = ImportJob(
+        tenant_id=user.tenant_id,
+        created_by=user.id,
+        status="draft",
+        entity_type=entity_type,
+        original_filename=file.filename,
+        total_rows=result.total_rows,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+    )
+    db.add(job)
+    db.flush()
+
+    storage.save(user.tenant_id, job.id, file.filename or f"upload{ext}", content)
+
+    db.commit()
+
+    return UploadResponse(
+        job_id=job.id,
+        entity_type=entity_type,
+        detected_headers=result.headers,
+        preview_rows=result.preview_rows,
+        total_rows=result.total_rows,
+        sheets=result.sheets,
+    )
 
 
 # ---------------------------------------------------------------------------
