@@ -63,6 +63,10 @@ class Asset(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+    import_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_jobs.id"),
+        nullable=True
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True

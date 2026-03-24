@@ -77,6 +77,14 @@ ASSET_STATUSES = [
         "display_order": 90,
         "metadata_": {"scoped_by_location": False},
     },
+    {
+        "category": "asset_status",
+        "code": "import_pending",
+        "label": "Import Pending",
+        "is_system": True,
+        "display_order": 100,
+        "metadata_": {"scoped_by_location": False, "hidden_in_normal_queries": True},
+    },
 ]
 
 MOBILITY_PROFILES = [

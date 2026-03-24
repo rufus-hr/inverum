@@ -10,7 +10,15 @@ from app.models.location import Location
 from app.models.user import User, UserIdentity
 from app.models.system_config import SystemConfig
 from app.models.reference_data import ReferenceData
+from app.models.permission import Permission
 from app.seeds.config import ALL_SYSTEM_SEEDS
+
+SYSTEM_PERMISSIONS = [
+    {"code": "import:view", "name": "View Imports", "resource": "import", "action": "view",
+     "description": "View all import jobs for the tenant"},
+    {"code": "import:edit", "name": "Edit Imports", "resource": "import", "action": "edit",
+     "description": "Resolve other users' conflicts and force-close import jobs"},
+]
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +27,21 @@ SEED_KEY = "seed_v2"
 
 def _hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _seed_permissions(db: Session) -> None:
+    for p in SYSTEM_PERMISSIONS:
+        existing = db.query(Permission).filter_by(code=p["code"]).first()
+        if existing:
+            continue
+        db.add(Permission(
+            code=p["code"],
+            name=p["name"],
+            resource=p["resource"],
+            action=p["action"],
+            description=p.get("description"),
+            is_active=True,
+        ))
 
 
 def _seed_reference_data(db: Session, rows: list[dict]) -> None:
@@ -168,6 +191,7 @@ def run_seeds(db: Session) -> None:
             return
 
         _seed_reference_data(db, ALL_SYSTEM_SEEDS)
+        _seed_permissions(db)
 
         env = settings.ENVIRONMENT
 
