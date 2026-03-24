@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     VALKEY_URL: str = "valkey://localhost:6379/0"
 
+    ENVIRONMENT: str = "dev"
+    SEED_COMPLEXITY: str = "simple"
+
+    INTERNAL_API_KEY: str = "change-me-in-production"
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"

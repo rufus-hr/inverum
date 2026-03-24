@@ -29,7 +29,7 @@ def list_audit_logs(
     if entity_id:
         query = query.filter(AuditLog.entity_id == entity_id)
     total = query.count()
-    items = query.offset(pagination.offset).limit(pagination.limit).all()
+    items = query.order_by(AuditLog.created_at.desc()).offset(pagination.offset).limit(pagination.limit).all()
     pages = (total + pagination.limit - 1) // pagination.limit
     return PagedResponse(items=items, total=total, page=pagination.page, limit=pagination.limit, pages=pages)
 

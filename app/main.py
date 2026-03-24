@@ -1,8 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.seeds.run import run_seeds
+
+logger = logging.getLogger(__name__)
 from app.routers import auth as auth_router
 from app.routers import tenants as tenants_router
 from app.routers import reference_data as reference_data_router
@@ -22,12 +25,16 @@ from app.routers import warranties as warranties_router
 from app.routers import stock_items as stock_items_router
 from app.routers import asset_assignments as asset_assignments_router
 from app.routers import audit_log as audit_log_router
+from app.routers import onboarding as onboarding_router
+from app.routers import imports as imports_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         run_seeds(db)
+    except Exception:
+        logger.exception("Seed failed during startup.")
     finally:
         db.close()
     yield
@@ -59,6 +66,8 @@ app.include_router(warranties_router.router, prefix="/api/v1")
 app.include_router(stock_items_router.router, prefix="/api/v1")
 app.include_router(asset_assignments_router.router, prefix="/api/v1")
 app.include_router(audit_log_router.router, prefix="/api/v1")
+app.include_router(onboarding_router.router, prefix="/api/v1")
+app.include_router(imports_router.router, prefix="/api/v1")
 
 
 @app.get("/health")
