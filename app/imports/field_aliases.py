@@ -1,5 +1,9 @@
+from __future__ import annotations
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 """
-Field alias maps for column mapping suggestions.
+Field alias maps + suggest_mapping() for column mapping suggestions.
 Language: English (Phase 1). Croatian + LLM fallback in Phase 2.
 
 Structure:
@@ -236,3 +240,44 @@ def suggest_mapping_from_aliases(
         result[header] = alias_lookup.get(normalized)
 
     return result
+
+def suggest_mapping(                                                                                                                                      
+    headers: list[str],                                   
+    entity_type: str,
+    db: "Session",
+    threshold: float = 0.3, ) -> dict[str, str | None]:
+
+    return_value = {}
+    # Build alias → system_field map for pg_trgm matching
+    alias_to_field: dict[str, str] = {}
+    for field, alias_list in FIELD_ALIASES.get(entity_type, {}).items():
+        for alias in alias_list:
+            alias_to_field[alias] = field
+    known_aliases = list(alias_to_field.keys())
+
+    alias_results = suggest_mapping_from_aliases(headers, entity_type)
+
+    for header in headers:
+        normal_header = normalize_header(header)
+        if alias_results[header] is not None:
+            return_value[header] = alias_results[header]
+        else:
+            result = db.execute(
+                text("""
+                    SELECT field_name, similarity(:header, field_name) AS sim
+                    FROM unnest(:field_names) AS t(field_name)
+                    WHERE similarity(:header, field_name) >= :threshold
+                    ORDER BY sim DESC
+                    LIMIT 1
+                """),
+                {
+                    "header": normal_header,
+                    "field_names": known_aliases,
+                    "threshold": threshold,
+                }
+            ).fetchone()
+
+            return_value[header] = alias_to_field.get(result.field_name) if result else None
+
+    return return_value
+    

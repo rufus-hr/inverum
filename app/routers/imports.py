@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy.orm import Session
 
 from app.dependencies.db import get_db
-from app.dependencies.auth import get_current_user, require_permission
+from app.dependencies.auth import get_current_user, require_permission, user_has_permission
 from app.imports.parsers import CsvParser, ExcelParser
 from app.imports.storage import storage
-from app.models.import_job import ImportJob
+from app.imports.field_aliases import suggest_mapping
+from app.models.import_job import ImportJob, ImportMappingTemplate
 from app.models.user import User
 from app.schemas.import_job import (
     ApiImportRequest,
@@ -73,7 +74,7 @@ async def upload_file(
     db.flush()
 
     storage.save(user.tenant_id, job.id, file.filename or f"upload{ext}", content)
-
+    job.detected_headers = result.headers
     db.commit()
 
     return UploadResponse(
@@ -97,12 +98,24 @@ def set_column_mapping(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Set column mapping for a job. Job must be in draft or mapping status.
-    Updates job.column_mapping, transitions status → mapping.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(ImportJob.id == job_id).first()
+
+    if job is None:
+        raise HTTPException(status_code=404)   
+    if job.created_by != user.id:
+        if not user_has_permission(user, "import:edit", db):
+            raise HTTPException(status_code=403)
+    if job.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403)
+
+    if job.status not in ("draft", "mapping"):
+        raise HTTPException(status_code=409)
+
+    job.column_mapping = data.model_dump()
+    job.status = "mapping"
+    db.commit()
+
+    return job
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +128,17 @@ def create_mapping_template(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Save current mapping as a reusable template."""
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    query = db.query(ImportMappingTemplate).filter(
+        ImportMappingTemplate.name == data.name, 
+        ImportMappingTemplate.entity_type == data.entity_type,
+        ImportMappingTemplate.tenant_id == user.tenant_id,).first()
+    if query is not None:
+         raise HTTPException(status_code=409)
+    template = ImportMappingTemplate(**data.model_dump(), tenant_id=user.tenant_id, created_by=user.id)
+    db.add(template)
+    db.commit()
 
+    return template
 
 @router.get("/templates", response_model=list[MappingTemplateResponse])
 def list_mapping_templates(
@@ -126,9 +146,12 @@ def list_mapping_templates(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List saved mapping templates for this tenant."""
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    
+    query = db.query(ImportMappingTemplate) .filter(ImportMappingTemplate.tenant_id == user.tenant_id)
+    if entity_type is not None:
+        query = query.filter(ImportMappingTemplate.entity_type == entity_type)
+
+    return query.all()
 
 
 @router.post("/{job_id}/mapping/from-template/{template_id}", response_model=MappingFromTemplateResponse)
@@ -138,12 +161,35 @@ def apply_mapping_template(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Load a saved template and compare with current file headers.
-    Returns mapping + warnings for every mismatch — never silently ignores.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(
+        ImportJob.id == job_id,
+    ).first()
+    template = db.query(ImportMappingTemplate).filter(
+        ImportMappingTemplate.id == template_id,
+    ).first()
+    if job is None:
+        raise HTTPException(status_code=404)
+    if job.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403)
+    if template is None:
+        raise HTTPException(status_code=404)
+    if template.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403)
+
+
+    result = suggest_mapping(job.detected_headers, job.entity_type, db)
+
+    warnings = []                                                                                                                                             
+    for header in template.mapping:                                                                                                                           
+        if header not in result:                                                                                                                              
+            warnings.append({"csv_column": header, "issue": "missing_in_file"})
+
+    return MappingFromTemplateResponse(
+        mapping = result,
+        warnings = warnings,
+    )
+   
+
 
 
 # ---------------------------------------------------------------------------
