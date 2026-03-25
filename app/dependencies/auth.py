@@ -35,6 +35,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
     return user
 
+def user_has_permission(user: User, permission_code: str, db: Session) -> bool:
+    """Check permission inline (inside endpoint body, not as Depends)."""
+    perm = (
+        db.query(Permission)
+        .join(RolePermission, RolePermission.permission_id == Permission.id)
+        .join(Group, Group.role_id == RolePermission.role_id)
+        .join(UserGroup, UserGroup.group_id == Group.id)
+        .filter(
+            UserGroup.user_id == user.id,
+            Permission.code == permission_code,
+            Permission.is_active == True,
+            or_(
+                UserGroup.expires_at.is_(None),
+                UserGroup.expires_at > datetime.now(timezone.utc)
+            )
+        )
+        .first()
+    )
+    return perm is not None
+
+
 def require_permission(permission_code: str):
     def check(
         user: User = Depends(get_current_user),

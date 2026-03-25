@@ -20,6 +20,7 @@ class ImportJob(Base):
     original_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     column_mapping: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    detected_headers: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     total_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
