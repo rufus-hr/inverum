@@ -9,6 +9,19 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 from app.core.valkey import client as valkey
 
+from app.models.asset import Asset                                                                                                                        
+from app.models.location import Location                                                                                                                  
+from app.models.employee import Employee                                                                                                                  
+from app.models.vendor import Vendor                      
+                                                                                                                                                          
+_MODEL_MAP = {
+    "asset": Asset,                                                                                                                                       
+    "location": Location,                                 
+    "employee": Employee,
+    "vendor": Vendor,
+}
+
+
 # Unique fields per entity type used for conflict detection
 UNIQUE_FIELDS: dict[str, list[str]] = {
     "asset": ["serial_number", "inventory_number"],
@@ -35,22 +48,45 @@ def detect_conflict(
     row_data: dict,
     current_job_id: uuid.UUID,
 ) -> ConflictResult:
-    """
-    Check if row_data conflicts with an existing or import_pending record.
 
-    Flow:
-    1. For each unique field, query active + import_pending records
-    2. If conflict found, check Valkey lock
-    3. If lock held by different job → return locked_by_job_id
-    4. If no lock → acquire lock for current job
-    """
-    # TODO: implement
-    # Hints:
-    #   - import active records: deleted_at IS NULL, import_job_id IS NULL (or confirmed job)
-    #   - import_pending records: deleted_at IS NULL, import_job_id != current_job_id
-    #   - Valkey lock key: f"import_lock:{entity_type}:{entity_id}"
-    #   - valkey.set(key, str(current_job_id), ex=_LOCK_TTL, nx=True) — only set if not exists
-    raise NotImplementedError
+    model = _MODEL_MAP.get(entity_type)                                                                                                                       
+    if model is None:                                         
+        raise ValueError(f"Unknown entity_type: {entity_type}")   
+
+    unique_fields = UNIQUE_FIELDS.get(entity_type, [])                                                                                                        
+    conflict_fields = []
+    locked_by_job_id = None
+    existing_entity_id = None                                                                                                                                 
+    
+    for field in unique_fields:                                                                                                                               
+        value = row_data.get(field)                           
+        if value is None:
+            continue
+        existing = db.query(model).filter(
+            model.tenant_id == tenant_id,
+            model.deleted_at == None,
+            getattr(model, field) == value,
+        ).first()
+        
+        if existing:                                                                                                                                              
+            existing_entity_id = existing.id                      
+            conflict_fields.append(field)
+            key = f"import_lock:{entity_type}:{existing.id}"                                                                                                          
+            locked_by = valkey.get(key)                                                                                                                               
+            if locked_by and locked_by != str(current_job_id):
+                locked_by_job_id = locked_by
+            else:
+                valkey.set(key, str(current_job_id), ex=_LOCK_TTL, nx=True)
+    return ConflictResult (
+        has_conflict = len(conflict_fields) > 0,
+        existing_entity_id = existing_entity_id,
+        locked_by_job_id = uuid.UUID(locked_by_job_id) if locked_by_job_id else None,
+        conflict_fields = conflict_fields,
+    )
+            
+            
+
+
 
 
 def release_locks(entity_type: str, entity_ids: list[uuid.UUID], job_id: uuid.UUID) -> None:
