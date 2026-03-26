@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.db import get_db
 from app.dependencies.auth import get_current_user, require_permission, user_has_permission
+from app.tasks.import_validation import validate_import
 from app.imports.parsers import CsvParser, ExcelParser
 from app.imports.storage import storage
 from app.imports.field_aliases import suggest_mapping
@@ -102,11 +103,11 @@ def set_column_mapping(
 
     if job is None:
         raise HTTPException(status_code=404)   
+    if job.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=403)
     if job.created_by != user.id:
         if not user_has_permission(user, "import:edit", db):
             raise HTTPException(status_code=403)
-    if job.tenant_id != user.tenant_id:
-        raise HTTPException(status_code=403)
 
     if job.status not in ("draft", "mapping"):
         raise HTTPException(status_code=409)
@@ -202,14 +203,25 @@ def trigger_validation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Start validation Celery task. Returns immediately with 202.
-    Poll job status via GET /imports/{job_id} to track progress.
-    """
-    # TODO: implement
-    # 1. Load job, verify status == "mapping" and owned by user
-    # 2. validate_import.delay(str(job_id))
-    # 3. job.status = "validating"
+    job_details = db.query(ImportJob).filter(
+        ImportJob.id == job_id,
+        ImportJob.deleted_at.is_(None),
+    ).first()
+    if job_details is None:
+        raise HTTPException(status_code=404)
+    if job_details.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404)
+    if job_details.created_by != user.id:
+        if not user_has_permission(user, "import:edit", db):
+            raise HTTPException(status_code=403)
+    if job_details.status != "mapping":
+        raise HTTPException(status_code=409, detail="Job must be in mapping status")
+
+    validate_import.delay(str(job_id))
+    job_details.status = "validating"
+    db.commit()
+
+    return ValidateResponse(job_id=job_id, status="validating")
     raise HTTPException(status_code=501, detail="Not implemented")
 
 
