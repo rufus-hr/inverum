@@ -3,7 +3,7 @@ ModelMatcher — fuzzy matching of asset model names via pg_trgm.
 Interface is AI-ready: find_candidates(name) -> list[Match].
 Future: LLM can implement same interface for smarter matching.
 """
-
+from sqlalchemy import text
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
@@ -27,18 +27,27 @@ class ModelMatcher:
         self.limit = limit
 
     def find_candidates(self, db: Session, name: str) -> list[Match]:
-        """
-        Return up to `limit` asset_configurations ordered by similarity desc.
-        Empty list if no match above threshold.
-        """
-        # TODO: implement
-        # Hints:
-        #   - use db.execute(text(...)) with pg_trgm similarity()
-        #   - SQL: SELECT id, name, similarity(name, :q) AS sim
-        #           FROM asset_configurations
-        #           WHERE similarity(name, :q) > :threshold
-        #           ORDER BY sim DESC LIMIT :limit
-        raise NotImplementedError
+       
+        return_value = []
+
+        result = db.execute(
+            text("""
+                    SELECT id, name, similarity(name, :q) AS sim
+                    FROM asset_configurations
+                    WHERE similarity(name, :q) > :threshold
+                    ORDER BY sim DESC
+                    LIMIT :limit
+                """),
+                {
+                    "q": name,
+                    "threshold": self.threshold,
+                    "limit": self.limit,
+                }
+            ).all()
+
+        for item in result:
+            return_value.append(Match(id=str(item.id), name=item.name, similarity=item.sim))
+        return return_value
 
 
 matcher = ModelMatcher()
