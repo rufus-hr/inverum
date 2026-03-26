@@ -10,6 +10,7 @@ from app.dependencies.db import get_db
 from app.models.tenant import Tenant
 from app.models.user import User, UserIdentity
 from app.models.reference_data import ReferenceData
+from app.models.i18n import Language, Region, TenantRegionalSettings
 from app.schemas.onboarding import TenantOnboardingRequest, TenantOnboardingResponse
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,19 @@ def onboard_tenant(
 
         tier_filter = _TIER_MAP[data.permission_tier]
         _copy_reference_data(db, tenant.id, tier_filter)
+
+        region = db.query(Region).filter_by(code=data.region_code).first()
+        language = db.query(Language).filter_by(code=data.language_code).first()
+        if not region:
+            raise HTTPException(status_code=422, detail=f"Unknown region_code: {data.region_code}")
+        if not language:
+            raise HTTPException(status_code=422, detail=f"Unknown language_code: {data.language_code}")
+
+        db.add(TenantRegionalSettings(
+            tenant_id=tenant.id,
+            language_id=language.id,
+            region_id=region.id,
+        ))
 
         db.commit()
         logger.info("Tenant onboarded: slug=%s tier=%s", data.slug, data.permission_tier)

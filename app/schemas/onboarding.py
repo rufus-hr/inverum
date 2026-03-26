@@ -12,6 +12,8 @@ class TenantOnboardingRequest(BaseModel):
     slug: str
     auth_method: str        # local | ldap
     permission_tier: str    # simple | basic | standard | enterprise
+    region_code: str = "HR"
+    language_code: str = "hr"
     admin_user: AdminUserRequest
 
 
