@@ -48,6 +48,7 @@ from app.models.group import Group, UserGroup, GroupOrgScope, GroupLocationScope
 from app.models.platform_user import PlatformUser, PlatformIdentity, PlatformUserRole
 from app.models.system_config import SystemConfig
 from app.models.import_job import ImportJob, ImportRecord, ImportConflict, ImportMappingTemplate
+from app.models.i18n import Language, Region, RegionIdentifierType, TenantRegionalSettings, UserSettings
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

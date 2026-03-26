@@ -22,6 +22,16 @@ class FieldNormalizer:
     Rules are per-field. Unknown fields pass through as-is.
     """
 
+    def __init__(
+        self,
+        language_code: str = "en",
+        region_code: str = "US",
+        unit_display_settings: dict | None = None,
+    ) -> None:
+        self.language_code = language_code
+        self.region_code = region_code
+        self.unit_display_settings = unit_display_settings or {}
+
     # Maps field name → method name (string). Resolved via getattr in normalize().
     _FIELD_METHOD_MAP: dict[str, str] = {
         "ram": "_normalize_capacity",
