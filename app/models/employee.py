@@ -66,6 +66,7 @@ class Employee(Base):
         ForeignKey("import_jobs.id"),
         nullable=True
     )
+    department_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True
