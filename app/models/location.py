@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import String, Boolean, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -55,6 +56,9 @@ class Location(Base):
     import_job_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("import_jobs.id"),
         nullable=True
+    )
+    default_asset_relations: Mapped[dict | None] = mapped_column(
+        "default_asset_relations", JSONB, nullable=True
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
