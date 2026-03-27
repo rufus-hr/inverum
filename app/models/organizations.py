@@ -45,6 +45,9 @@ class Organization(Base):
     default_asset_relations: Mapped[dict | None] = mapped_column(
         "default_asset_relations", JSONB, nullable=True
     )
+    region_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("regions.id"), nullable=True)
+    language_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("languages.id"), nullable=True)
+
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True
