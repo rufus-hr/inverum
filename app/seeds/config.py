@@ -474,6 +474,17 @@ ASSET_FIELDS = [
     },
 ]
 
+ASSET_RELATION_TYPES = [
+    {"category": "asset_relation_type", "code": "owner",          "label": "Owner",           "is_system": True, "display_order": 10, "metadata_": None},
+    {"category": "asset_relation_type", "code": "support",        "label": "Support",         "is_system": True, "display_order": 20, "metadata_": None},
+    {"category": "asset_relation_type", "code": "responsible",    "label": "Responsible",     "is_system": True, "display_order": 30, "metadata_": None},
+    {"category": "asset_relation_type", "code": "billing",        "label": "Billing",         "is_system": True, "display_order": 40, "metadata_": None},
+    {"category": "asset_relation_type", "code": "maintenance",    "label": "Maintenance",     "is_system": True, "display_order": 50, "metadata_": None},
+    {"category": "asset_relation_type", "code": "lease",          "label": "Lease",           "is_system": True, "display_order": 60, "metadata_": None},
+    {"category": "asset_relation_type", "code": "insurance",      "label": "Insurance",       "is_system": True, "display_order": 70, "metadata_": None},
+    {"category": "asset_relation_type", "code": "service_partner","label": "Service Partner", "is_system": True, "display_order": 80, "metadata_": None},
+]
+
 ALL_SYSTEM_SEEDS = (
     ASSET_STATUSES
     + MOBILITY_PROFILES
@@ -482,4 +493,5 @@ ALL_SYSTEM_SEEDS = (
     + VENDOR_TYPES
     + LOCATION_TYPES
     + ASSET_FIELDS
+    + ASSET_RELATION_TYPES
 )
