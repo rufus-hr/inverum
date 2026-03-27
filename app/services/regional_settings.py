@@ -93,16 +93,16 @@ def get_effective_regional_settings(
 
     return {
         "region_id": _first(
-            str(user_settings.region_id) if user_settings and hasattr(user_settings, 'region_id') else None,
+            str(user_settings.region_id) if user_settings and user_settings.region_id else None,
             dept_region_id,
             org_settings.get("region_id"),
-            str(tenant_settings.region_id) if tenant_settings else None,
+            str(tenant_settings.region_id) if tenant_settings and tenant_settings.region_id else None,
         ),
         "language_id": _first(
             str(user_settings.language_id) if user_settings and user_settings.language_id else None,
             dept_language_id,
             org_settings.get("language_id"),
-            str(tenant_settings.language_id) if tenant_settings else None,
+            str(tenant_settings.language_id) if tenant_settings and tenant_settings.language_id else None,
         ),
     }
 

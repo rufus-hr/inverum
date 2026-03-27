@@ -7,6 +7,7 @@ class DeptBase(BaseModel):
     organization_id: uuid.UUID
     name: str
     code: str | None = None
+    description: str | None = None
     parent_id: uuid.UUID | None = None
     region_id: uuid.UUID | None = None
     language_id: uuid.UUID | None = None
@@ -21,6 +22,7 @@ class DeptModify(BaseModel):
     organization_id: uuid.UUID | None = None
     name: str | None = None
     code: str | None = None
+    description: str | None = None
     parent_id: uuid.UUID | None = None
     region_id: uuid.UUID | None = None
     language_id: uuid.UUID | None = None
