@@ -18,6 +18,14 @@ SYSTEM_PERMISSIONS = [
      "description": "View all import jobs for the tenant"},
     {"code": "import:edit", "name": "Edit Imports", "resource": "import", "action": "edit",
      "description": "Resolve other users' conflicts and force-close import jobs"},
+    {"code": "department:read", "name": "Read Departments", "resource": "department", "action": "read",
+     "description": "View departments"},
+    {"code": "department:create", "name": "Create Departments", "resource": "department", "action": "create",
+     "description": "Create new departments"},
+    {"code": "department:modify", "name": "Modify Departments", "resource": "department", "action": "modify",
+     "description": "Update existing departments"},
+    {"code": "department:delete", "name": "Delete Departments", "resource": "department", "action": "delete",
+     "description": "Soft-delete departments"},
 ]
 
 logger = logging.getLogger(__name__)

@@ -1,11 +1,14 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel
+
+AssignedToType = Literal["user", "workplace", "location", "stock", "department"]
 
 
 class AssetAssignCreate(BaseModel):
     asset_id: uuid.UUID
-    assigned_to_type: str
+    assigned_to_type: AssignedToType
     assigned_to_id: uuid.UUID | None = None
     notes: str | None = None
 

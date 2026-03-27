@@ -55,9 +55,11 @@ FIELD_ALIASES: dict[str, dict[str, list[str]]] = {
             "location", "office", "site", "building", "room",
             "floor", "place", "physical location", "loc",
         ],
+        "department": [
+            "department", "dept", "team", "division", "unit", "group",
+        ],
         "organization": [
-            "organization", "organisation", "department", "dept",
-            "team", "division", "business unit", "unit", "group",
+            "organization", "organisation", "business unit",
         ],
         "vendor": [
             "vendor", "supplier", "reseller", "sold by",
@@ -152,9 +154,11 @@ FIELD_ALIASES: dict[str, dict[str, list[str]]] = {
             "employment type", "contract type", "type",
             "employment", "contract",
         ],
+        "department": [
+            "department", "dept", "team", "division", "unit", "group",
+        ],
         "organization": [
-            "department", "dept", "team", "division",
-            "organization", "unit", "group",
+            "organization", "organisation", "company",
         ],
         "location": [
             "location", "office", "site", "workplace",

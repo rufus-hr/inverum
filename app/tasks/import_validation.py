@@ -6,7 +6,10 @@ Chunking: 1000 rows per subtask, parent tracks progress.
 
 import uuid
 from app.celery_app import celery_app
-
+from app.imports.storage import FileStorage
+from app/imports/normalizers import FieldNormalizer
+from app.core.database import SessionLocal
+from app.models.import_job import ImportJob
 
 @celery_app.task(
     bind=True,
@@ -17,6 +20,16 @@ from app.celery_app import celery_app
     time_limit=60 * 35,        # 35 min hard limit
 )
 def validate_import(self, job_id: str) -> dict[str, int]:
+    db = SessionLocal()                                                                                                                                       
+    job
+    try:            
+        job = db.query(ImportJob).filter(
+            ImportJob.id == uuid.UUID(job_id),
+        ).first()
+    finally:                                                                                                                                                  
+        db.close()
+
+    
     """
     Main validation task for an ImportJob.
     Spawns chunk subtasks, waits for all, then aggregates.
@@ -42,13 +55,8 @@ def validate_import(self, job_id: str) -> dict[str, int]:
     queue="inverum-worker-imports",
 )
 def validate_chunk(self, job_id: str, rows: list[dict], row_offset: int) -> dict[str, int]:
-    """
-    Validate a chunk of rows.
-    Creates ImportRecord for each row (valid/conflict/error).
-    Acquires Valkey locks for conflicting entities.
+    
 
-    Returns: {"valid": int, "conflict": int, "error": int}
-    Example: {"valid": 950, "conflict": 30, "error": 20}
     """
     # TODO: implement
     # Per row:
