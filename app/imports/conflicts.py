@@ -9,16 +9,18 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 from app.core.valkey import client as valkey
 
-from app.models.asset import Asset                                                                                                                        
-from app.models.location import Location                                                                                                                  
-from app.models.employee import Employee                                                                                                                  
-from app.models.vendor import Vendor                      
-                                                                                                                                                          
+from app.models.asset import Asset
+from app.models.location import Location
+from app.models.employee import Employee
+from app.models.vendor import Vendor
+from app.models.department import Department
+
 _MODEL_MAP = {
-    "asset": Asset,                                                                                                                                       
-    "location": Location,                                 
+    "asset": Asset,
+    "location": Location,
     "employee": Employee,
     "vendor": Vendor,
+    "department": Department,
 }
 
 
@@ -28,6 +30,7 @@ UNIQUE_FIELDS: dict[str, list[str]] = {
     "location": ["name"],         # within same tenant + parent
     "employee": ["employee_number", "email"],
     "vendor": ["oib", "vat_id"],
+    "department": ["code"],       # code is unique within tenant (nullable, only checked if present)
 }
 
 _LOCK_TTL = 60 * 60 * 24  # 24h — matches job expires_at
