@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
+from app.core.valkey import client as valkey
 
 from app.dependencies.db import get_db
 from app.dependencies.auth import get_current_user, require_permission, user_has_permission
@@ -11,6 +12,7 @@ from app.tasks.import_validation import validate_import
 from app.imports.parsers import CsvParser, ExcelParser
 from app.imports.storage import storage
 from app.imports.field_aliases import suggest_mapping
+from app.imports.conflicts import _MODEL_MAP
 from app.models.import_job import ImportJob, ImportMappingTemplate
 from app.models.user import User
 from app.schemas.import_job import (
@@ -148,7 +150,7 @@ def list_mapping_templates(
     db: Session = Depends(get_db),
 ):
     
-    query = db.query(ImportMappingTemplate) .filter(ImportMappingTemplate.tenant_id == user.tenant_id)
+    query = db.query(ImportMappingTemplate).filter(ImportMappingTemplate.tenant_id == user.tenant_id)
     if entity_type is not None:
         query = query.filter(ImportMappingTemplate.entity_type == entity_type)
 
@@ -237,14 +239,43 @@ def list_conflicts(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    List all conflicts for a job with pagination.
-    Each conflict includes side-by-side field diffs (new vs existing record).
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    conflicts_resposne = []
+    job = db.query(ImportJob).filter(ImportJob.id == job_id, ImportJob.status == "pending_review").first()
+    if job is None:
+        raise HTTPException(status_code=404)
+    for conflict in job.conflicts:
+        model = _MODEL_MAP[conflict.entity_type]
+        existing = db.query(model).filter(model.id == conflict.entity_id).first()
+        record = conflict.record
 
+        all_keys = {k for k in existing.__dict__ if not k.startswith("_")} | set(record.parsed_data.keys())
+        diffs = [
+            ConflictFieldDiff(
+                field=field,
+                existing_value=getattr(existing, field, None),
+                new_value=record.parsed_data.get(field),
+                is_conflict=getattr(existing, field, None) != record.parsed_data.get(field),
+            )
+            for field in all_keys
+        ]
+        key = f"import_lock:{conflict.entity_type}:{conflict.entity_id}"
+        locked = valkey.get(key)
+        locked_by_job_id = uuid.UUID(locked) if locked else None
 
+        conflicts_resposne.append(ConflictResponse(
+            id=conflict.id,
+            import_record_id=conflict.import_record_id,
+            entity_type=conflict.entity_type,
+            entity_id=conflict.entity_id,
+            locked_by_job_id=locked_by_job_id,  # fetch from Valkey
+            resolution=conflict.resolution,
+            field_diffs=diffs,
+            resolved_at=conflict.resolved_at,
+        ))
+    total = len(conflicts_resposne)
+    pages = (total + limit - 1) // limit
+    return PagedResponse(items=conflicts_resposne, total=total, page=page, limit=limit, pages=pages)
+        
 # ---------------------------------------------------------------------------
 # E2 — Resolve conflict
 # ---------------------------------------------------------------------------
@@ -257,12 +288,25 @@ def resolve_conflict(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Resolve a conflict: keep_existing | use_new | merge.
-    Merge requires merge_decisions {field: "new"|"existing"}.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(ImportJob.id == job_id, ImportJob.status == "pending_review").first()
+    if job is None:
+        raise HTTPException(status_code=404)
+    conflict = db.query(ImportConflict).filter(
+        ImportConflict.id == conflict_id,
+        ImportConflict.import_job_id == job_id,
+    ).first()
+    if conflict is None:
+        raise HTTPException(status_code=404)
+    conflict.resolution = data.resolution                                                                                                                     
+    conflict.merge_decisions = data.merge_decisions                                                                                                           
+    conflict.resolved_at = datetime.now(timezone.utc)                                                                                                         
+    conflict.resolved_by = user.id                                                                                                                            
+    db.commit()
+    return JobStatusResponse(
+        job_id=job.id,
+        status=job.status,
+        message="Conflict resolved.",
+    )
 
 
 # ---------------------------------------------------------------------------

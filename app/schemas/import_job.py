@@ -67,6 +67,7 @@ class ConflictFieldDiff(BaseModel):
     field: str
     new_value: str | None
     existing_value: str | None
+    is_conflict: bool
 
 
 class ConflictResponse(BaseModel):
