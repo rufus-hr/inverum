@@ -7,6 +7,7 @@ from app.core.database import Base
 
 class Vendor(Base):
     __tablename__ = "vendors"
+    __revertable__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

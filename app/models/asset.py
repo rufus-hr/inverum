@@ -9,6 +9,7 @@ from app.core.database import Base
 
 class Asset(Base):
     __tablename__ = "assets"
+    __revertable__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

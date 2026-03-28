@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.valkey import client as valkey
 
@@ -14,6 +15,7 @@ from app.imports.storage import storage
 from app.imports.field_aliases import suggest_mapping
 from app.imports.conflicts import _MODEL_MAP, release_locks
 from app.models.import_job import ImportJob, ImportMappingTemplate, ImportRecord, ImportConflict
+from app.models.sql_revert_log import SqlRevertLog
 from app.imports.notifications import notifications
 from app.models.user import User
 from app.schemas.import_job import (
@@ -30,6 +32,8 @@ from app.schemas.import_job import (
     ConflictResponse,
 )
 from app.schemas.pagination import PagedResponse
+
+_REVERTABLE_TABLES = {"assets", "locations", "employees", "vendors", "departments"}
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -371,6 +375,7 @@ def confirm_import(
                     if decision == "new" and field not in _PROTECTED_FIELDS:
                         setattr(existing, field, record.parsed_data.get(field))
     job.status = "confirmed"
+    job.confirmed_at = datetime.now(timezone.utc)
     notifications.on_import_confirmed(job)
     db.commit()
     return JobStatusResponse(
@@ -378,6 +383,117 @@ def confirm_import(
         status = job.status,
         message="Import confirmed.",
     )
+
+
+# ---------------------------------------------------------------------------
+# H2b — Preview (summary before confirm)
+# ---------------------------------------------------------------------------
+
+@router.get("/{job_id}/preview")
+def preview_import(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    job = db.query(ImportJob).filter(
+        ImportJob.id == job_id,
+        ImportJob.tenant_id == user.tenant_id,
+    ).first()
+    if job is None:
+        raise HTTPException(status_code=404)
+
+    to_create: dict[str, int] = {}
+    to_update: dict[str, int] = {}
+    conflicts_resolved: dict[str, int] = {}
+
+    for record in job.records:
+        if record.status == "valid":
+            to_create[job.entity_type] = to_create.get(job.entity_type, 0) + 1
+        elif record.status == "conflict" and record.conflict:
+            resolution = record.conflict.resolution
+            if resolution == "use_new":
+                to_update[job.entity_type] = to_update.get(job.entity_type, 0) + 1
+                conflicts_resolved["use_new"] = conflicts_resolved.get("use_new", 0) + 1
+            elif resolution == "merge":
+                to_update[job.entity_type] = to_update.get(job.entity_type, 0) + 1
+                conflicts_resolved["merge"] = conflicts_resolved.get("merge", 0) + 1
+
+    return {
+        "to_create": to_create,
+        "to_update": to_update,
+        "conflicts_resolved": conflicts_resolved,
+    }
+
+
+# ---------------------------------------------------------------------------
+# H2c — Revert (60s window after confirm)
+# ---------------------------------------------------------------------------
+
+def _execute_revert(db: Session, record: SqlRevertLog) -> None:
+    table = record.revert_data["table"]
+    if table not in _REVERTABLE_TABLES:
+        raise ValueError(f"Cannot revert table: {table}")
+
+    if record.action == "create":
+        pk = record.revert_data["pk"]
+        db.execute(text(f"DELETE FROM {table} WHERE id = :pk"), {"pk": pk})
+
+    elif record.action == "update":
+        pk = record.revert_data["pk"]
+        old_values = record.revert_data["old_values"]
+        set_clause = ", ".join(f"{k} = :{k}" for k in old_values)
+        params = dict(old_values)
+        params["pk"] = pk
+        db.execute(text(f"UPDATE {table} SET {set_clause} WHERE id = :pk"), params)
+
+    elif record.action == "delete":
+        old_values = record.revert_data["old_values"]
+        cols = ", ".join(old_values.keys())
+        placeholders = ", ".join(f":{k}" for k in old_values.keys())
+        db.execute(text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"), old_values)
+
+
+@router.post("/{job_id}/revert", response_model=JobStatusResponse)
+def revert_import(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user_has_permission(user, "import:edit", db):
+        raise HTTPException(status_code=403)
+
+    job = db.query(ImportJob).filter(
+        ImportJob.id == job_id,
+        ImportJob.tenant_id == user.tenant_id,
+    ).first()
+    if job is None:
+        raise HTTPException(status_code=404)
+    if job.status != "confirmed":
+        raise HTTPException(status_code=422, detail="Only confirmed imports can be reverted")
+    if job.confirmed_at is None or datetime.now(timezone.utc) > job.confirmed_at + timedelta(seconds=60):
+        raise HTTPException(status_code=422, detail="Revert window expired")
+
+    revert_records = (
+        db.query(SqlRevertLog)
+        .filter(SqlRevertLog.import_job_id == job.id)
+        .order_by(SqlRevertLog.sequence.desc())
+        .all()
+    )
+
+    try:
+        for record in revert_records:
+            _execute_revert(db, record)
+
+        job.status = "rolled_back"
+        entity_ids = [r.entity_id for r in revert_records]
+        db.query(SqlRevertLog).filter(SqlRevertLog.import_job_id == job.id).delete()
+        release_locks(job.entity_type, entity_ids, job.id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="Revert nije uspio. Vaši podaci nisu promijenjeni.")
+
+    return JobStatusResponse(job_id=job.id, status=job.status, message="Import reverted.")
 
 
 # ---------------------------------------------------------------------------

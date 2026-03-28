@@ -7,6 +7,7 @@ from app.core.database import Base
 
 class AssetAssignment(Base):
     __tablename__ = "asset_assignments"
+    __auditable__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

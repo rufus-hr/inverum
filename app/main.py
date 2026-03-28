@@ -4,6 +4,9 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.seeds.run import run_seeds
+from app.core.audit_listener import register_listeners
+
+register_listeners()
 
 logger = logging.getLogger(__name__)
 from app.routers import auth as auth_router

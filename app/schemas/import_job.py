@@ -95,6 +95,7 @@ class ImportJobResponse(BaseModel):
     id: uuid.UUID
     entity_type: str
     status: str
+    organization_id: uuid.UUID | None
     original_filename: str | None
     total_rows: int | None
     processed_rows: int

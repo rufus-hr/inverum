@@ -6,6 +6,7 @@ from app.core.database import Base
 
 class Employee(Base):
     __tablename__ = "employees"
+    __revertable__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

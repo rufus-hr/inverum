@@ -5,6 +5,7 @@ Chunking: 1000 rows per subtask, parent tracks progress.
 """
 
 import uuid
+import logging
 from app.celery_app import celery_app
 from app.imports.storage import FileStorage, storage
 from app.imports.normalizers import FieldNormalizer
@@ -12,11 +13,14 @@ from app.imports.conflicts import check_mandatory_fields, detect_conflict
 from app.imports.parsers import ExcelParser, CsvParser
 from app.core.database import SessionLocal
 from app.models.import_job import ImportJob
-from app.models.i18n import  Language, Region
+from app.models.i18n import Language, Region
 from app.models.import_job import ImportRecord, ImportConflict
 from app.services.regional_settings import get_effective_regional_settings
+from app.core.audit_listener import current_import_job_id, current_worker_task
 from pathlib import Path
 from celery import chord, group
+
+logger = logging.getLogger(__name__)
 
 @celery_app.task(
     bind=True,
@@ -71,6 +75,8 @@ def validate_import(self, job_id: str) -> dict[str, int]:
     queue="inverum-worker-imports",
 )
 def validate_chunk(self, job_id: str, rows: list[dict], row_offset: int) -> dict[str, int]:
+    current_import_job_id.set(job_id)
+    current_worker_task.set("validate_import")
     valid_count = 0
     conflict_count = 0
     error_count = 0

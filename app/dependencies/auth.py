@@ -5,11 +5,12 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.core.config import settings
-from app.dependencies.db import get_db                                                                                                                    
+from app.dependencies.db import get_db
 from app.models.user import User
 from app.models.group import Group, UserGroup
 from app.models.role_permission import RolePermission
 from app.models.permission import Permission
+from app.core.audit_listener import current_user_id as _audit_user_id
 
                                                                                                                                                           
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -33,6 +34,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    _audit_user_id.set(str(user.id))
     return user
 
 def user_has_permission(user: User, permission_code: str, db: Session) -> bool:
