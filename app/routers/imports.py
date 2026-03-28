@@ -542,13 +542,20 @@ def list_jobs(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    List import jobs. Without import:view permission: own jobs only.
-    With import:view: all tenant jobs.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    query = db.query(ImportJob).filter(ImportJob.tenant_id == user.tenant_id)
+    if not user_has_permission(user, "import:view", db):                                                                                                      
+        query = query.filter(ImportJob.created_by == user.id)
+    if status is not None:
+        query = query.filter(ImportJob.status == status)
+    if entity_type is not None:
+        query = query.filter(ImportJob.entity_type == entity_type)
+    if created_by is not None:
+        query = query.filter(ImportJob.created_by == created_by)
 
+    total = query.count()
+    items = query.offset((page - 1) * limit).limit(limit).all()
+    pages = (total + limit - 1) // limit
+    return PagedResponse(items=items, total=total, page=page, limit=limit, pages=pages)
 
 # ---------------------------------------------------------------------------
 # I2 — Force close
@@ -557,17 +564,32 @@ def list_jobs(
 @router.post("/{job_id}/force-close", response_model=JobStatusResponse)
 def force_close(
     job_id: uuid.UUID,
-    user: User = Depends(require_permission("import:edit")),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Force job to failed status. Releases all Valkey locks.
-    Requires import:edit permission.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(                         
+        ImportJob.id == job_id,
+        ImportJob.tenant_id == user.tenant_id,                                                                                                                
+    ).first()
+    if job is None:                                                                                                                                           
+        raise HTTPException(status_code=404)                  
+    if job.created_by != user.id and not user_has_permission(user, "import:edit", db):
+        raise HTTPException(status_code=403)                                                                                                                  
+    if job.status in ("failed", "rolled_back", "confirmed"):
+        raise HTTPException(status_code=409, detail="Job already in terminal status")  
 
+    entity_ids = [c.entity_id for c in job.conflicts]                                                                                                         
+    release_locks(job.entity_type, entity_ids, job.id)
+    job.status = "failed"                                                                                                                                     
+    db.commit()  
 
+    return JobStatusResponse(
+        job_id = job.id,
+        status = job.status,
+        message=f"Import forced to quit by {user.name}.",
+    )
+    
+    
 # ---------------------------------------------------------------------------
 # Job status (used for polling after validate)
 # ---------------------------------------------------------------------------
@@ -579,5 +601,15 @@ def get_job(
     db: Session = Depends(get_db),
 ):
     """Get current status and progress of an import job."""
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(                         
+        ImportJob.id == job_id,
+        ImportJob.tenant_id == user.tenant_id,                                                                                                                
+    ).first()
+
+    if job is None:                                                                                                                                           
+        raise HTTPException(status_code=404)                  
+    if job.created_by != user.id and not user_has_permission(user, "import:edit", db):
+        raise HTTPException(status_code=403)                                                                                                                  
+    
+    return job
+
