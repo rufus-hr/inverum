@@ -33,6 +33,14 @@ UNIQUE_FIELDS: dict[str, list[str]] = {
     "department": ["code"],       # code is unique within tenant (nullable, only checked if present)
 }
 
+MANDATORY_FIELDS = {
+    "asset": ["name", "organization_id"],
+    "location": ["name"],
+    "employee": ["first_name", "last_name", "employment_type"],
+    "vendor": ["name"],
+    "department": ["name", "organization_id"],
+}
+
 _LOCK_TTL = 60 * 60 * 24  # 24h — matches job expires_at
 
 
@@ -61,15 +69,24 @@ def detect_conflict(
     locked_by_job_id = None
     existing_entity_id = None                                                                                                                                 
     
-    for field in unique_fields:                                                                                                                               
-        value = row_data.get(field)                           
+    for field in unique_fields:
+        value = row_data.get(field)
         if value is None:
             continue
-        existing = db.query(model).filter(
+
+        query = db.query(model).filter(
             model.tenant_id == tenant_id,
             model.deleted_at == None,
             getattr(model, field) == value,
-        ).first()
+        )
+
+        # serial_number is unique per manufacturer, not globally
+        if entity_type == "asset" and field == "serial_number":
+            manufacturer_id = row_data.get("manufacturer_id")
+            if manufacturer_id is not None:
+                query = query.filter(Asset.manufacturer_id == manufacturer_id)
+
+        existing = query.first()
         
         if existing:                                                                                                                                              
             existing_entity_id = existing.id                      
@@ -105,3 +122,7 @@ def release_locks(entity_type: str, entity_ids: list[uuid.UUID], job_id: uuid.UU
         current = valkey.get(key)
         if current and current == str(job_id):
             valkey.delete(key)
+
+
+def check_mandatory_fields(entity_type: str, row_data: dict) -> list[str]:
+    return [field for field in MANDATORY_FIELDS.get(entity_type, []) if not row_data.get(field)]

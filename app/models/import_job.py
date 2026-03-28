@@ -17,6 +17,7 @@ class ImportJob(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)  # asset | location | employee | vendor
 
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id"), nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sheet_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     column_mapping: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

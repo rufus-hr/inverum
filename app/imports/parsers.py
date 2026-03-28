@@ -25,6 +25,13 @@ class ParseResult:
     total_rows: int | None         # None if not determinable without full parse
     sheets: list[SheetInfo] = field(default_factory=list)  # Excel only
 
+@dataclass
+class ParseResultAll:
+    headers: list[str]
+    rows: list[dict]               # all rows, {header: value}
+    total_rows: int | None         # None if not determinable without full parse
+    sheets: list[SheetInfo] = field(default_factory=list)  # Excel only
+
 
 # Keywords used to guess entity type from sheet name / column names
 _ENTITY_KEYWORDS: dict[str, list[str]] = {
@@ -41,28 +48,28 @@ class CsvParser:
     Priority: ; → , → \t
     """
 
-    def parse(self, content: bytes, encoding: str = "utf-8") -> ParseResult:
+    def _decode(self, content: bytes, encoding: str) -> str:
         try:
-            text = content.decode(encoding)
+            return content.decode(encoding)
         except UnicodeDecodeError:
-            text = content.decode("latin-1")
+            return content.decode("latin-1")
 
+    def _parse_rows(self, text: str) -> tuple[list[str], list[dict], int]:
         delimiter = self._detect_delimiter(text)
         reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         headers = list(reader.fieldnames or [])
+        rows = [dict(row) for row in reader]
+        return headers, rows, len(rows)
 
-        preview_rows: list[dict] = []
-        total = 0
-        for row in reader:
-            total += 1
-            if total <= 10:
-                preview_rows.append(dict(row))
+    def parse(self, content: bytes, encoding: str = "utf-8") -> ParseResult:
+        text = self._decode(content, encoding)
+        headers, rows, total = self._parse_rows(text)
+        return ParseResult(headers=headers, preview_rows=rows[:10], total_rows=total)
 
-        return ParseResult(
-            headers=headers,
-            preview_rows=preview_rows,
-            total_rows=total,
-        )
+    def parse_all(self, content: bytes, encoding: str = "utf-8") -> ParseResultAll:
+        text = self._decode(content, encoding)
+        headers, rows, total = self._parse_rows(text)
+        return ParseResultAll(headers=headers, rows=rows, total_rows=total)
 
     def _detect_delimiter(self, text: str) -> str:
         """
@@ -113,6 +120,22 @@ class ExcelParser:
         result.sheets = sheets
         return result
 
+    def parse_all(self, content: bytes, sheet_name: str | None = None) -> ParseResultAll:
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+
+        if sheet_name:
+            if sheet_name not in wb.sheetnames:
+                raise ValueError(f"Sheet '{sheet_name}' not found. Available: {wb.sheetnames}")
+            ws = wb[sheet_name]
+            return self._parse_sheet_all(ws)
+
+        # Analyse all sheets, return SheetInfo list + first-sheet preview
+        sheets = self._analyse_sheets(wb)
+        first_sheet_name = min(sheets, key=lambda s: s.suggested_order).name
+        result = self._parse_sheet_all(wb[first_sheet_name])
+        result.sheets = sheets
+        return result
+
     def _parse_sheet(self, ws) -> ParseResult:
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
@@ -131,6 +154,25 @@ class ExcelParser:
             })
 
         return ParseResult(headers=headers, preview_rows=preview_rows, total_rows=total)
+
+    def _parse_sheet_all(self, ws) -> ParseResultAll:
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            return ParseResultAll(headers=[], rows=[], total_rows=0)
+
+        headers = [str(cell) if cell is not None else "" for cell in rows[0]]
+        data_rows = rows[1:]
+        total = len(data_rows)
+
+        data_dicts = []
+        for row in data_rows:
+            data_dicts.append({
+                headers[i]: (str(cell) if cell is not None else "")
+                for i, cell in enumerate(row)
+                if i < len(headers)
+            })
+
+        return ParseResultAll(headers=headers, rows=data_dicts, total_rows=total)
 
     def _analyse_sheets(self, wb) -> list[SheetInfo]:
         sheets = []
