@@ -7,6 +7,7 @@ from app.core.database import Base
 
 class Location(Base):
     __tablename__ = "locations"
+    __revertable__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

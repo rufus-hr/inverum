@@ -8,6 +8,7 @@ from app.core.database import Base
 
 class Department(Base):
     __tablename__ = "departments"
+    __revertable__ = True
     __table_args__ = (
         Index("idx_departments_tenant_org", "tenant_id", "organization_id"),
         Index("idx_departments_parent", "parent_id"),
