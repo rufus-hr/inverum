@@ -22,9 +22,9 @@ class Asset(Base):
         ForeignKey("legal_entities.id"),
         nullable=True
     )
-    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+    organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id"),
-        nullable=True
+        nullable=False
     )
     location_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("locations.id"),
