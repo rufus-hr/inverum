@@ -349,19 +349,26 @@ def confirm_import(
     if unresolved:
         raise HTTPException(status_code=422, detail="Unresolved conflicts remain")
     for record in job.records:
+        _PROTECTED_FIELDS = {"tenant_id", "import_job_id", "id"}
         if record.status == "valid":
-            item = _MODEL_MAP[job.entity_type](**record.parsed_data, tenant_id=job.tenant_id)
+            item = _MODEL_MAP[job.entity_type](
+                **record.parsed_data,
+                tenant_id=job.tenant_id,
+                organization_id=job.organization_id,
+                import_job_id=job.id,
+            )
             db.add(item)
         elif record.status == "conflict":
             resolution = record.conflict.resolution
             if resolution == "use_new":
                 existing = db.query(_MODEL_MAP[job.entity_type]).filter_by(id=record.conflict.entity_id).first()
                 for field, value in record.parsed_data.items():
-                    setattr(existing, field, value)
+                    if field not in _PROTECTED_FIELDS:
+                        setattr(existing, field, value)
             elif resolution == "merge":
                 existing = db.query(_MODEL_MAP[job.entity_type]).filter_by(id=record.conflict.entity_id).first()
                 for field, decision in record.conflict.merge_decisions.items():
-                    if decision == "new":
+                    if decision == "new" and field not in _PROTECTED_FIELDS:
                         setattr(existing, field, record.parsed_data.get(field))
     job.status = "confirmed"
     notifications.on_import_confirmed(job)
