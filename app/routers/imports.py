@@ -12,8 +12,9 @@ from app.tasks.import_validation import validate_import
 from app.imports.parsers import CsvParser, ExcelParser
 from app.imports.storage import storage
 from app.imports.field_aliases import suggest_mapping
-from app.imports.conflicts import _MODEL_MAP
-from app.models.import_job import ImportJob, ImportMappingTemplate
+from app.imports.conflicts import _MODEL_MAP, release_locks
+from app.models.import_job import ImportJob, ImportMappingTemplate, ImportRecord, ImportConflict
+from app.imports.notifications import notifications
 from app.models.user import User
 from app.schemas.import_job import (
     ApiImportRequest,
@@ -297,10 +298,10 @@ def resolve_conflict(
     ).first()
     if conflict is None:
         raise HTTPException(status_code=404)
-    conflict.resolution = data.resolution                                                                                                                     
-    conflict.merge_decisions = data.merge_decisions                                                                                                           
-    conflict.resolved_at = datetime.now(timezone.utc)                                                                                                         
-    conflict.resolved_by = user.id                                                                                                                            
+    conflict.resolution = data.resolution
+    conflict.merge_decisions = data.merge_decisions
+    conflict.resolved_at = datetime.now(timezone.utc)
+    conflict.resolved_by = user.id
     db.commit()
     return JobStatusResponse(
         job_id=job.id,
@@ -340,13 +341,36 @@ def confirm_import(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Materialize import: batch UPDATE import_pending → proper status.
-    Requires all conflicts to be resolved.
-    Writes audit log per record. Triggers NotificationService.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(ImportJob.id == job_id, ImportJob.status == "pending_review").first()
+    if job is None:
+        raise HTTPException(status_code=404)
+
+    unresolved = [c for c in job.conflicts if c.resolution is None]
+    if unresolved:
+        raise HTTPException(status_code=422, detail="Unresolved conflicts remain")
+    for record in job.records:
+        if record.status == "valid":
+            item = _MODEL_MAP[job.entity_type](**record.parsed_data, tenant_id=job.tenant_id)
+            db.add(item)
+        elif record.status == "conflict":
+            resolution = record.conflict.resolution
+            if resolution == "use_new":
+                existing = db.query(_MODEL_MAP[job.entity_type]).filter_by(id=record.conflict.entity_id).first()
+                for field, value in record.parsed_data.items():
+                    setattr(existing, field, value)
+            elif resolution == "merge":
+                existing = db.query(_MODEL_MAP[job.entity_type]).filter_by(id=record.conflict.entity_id).first()
+                for field, decision in record.conflict.merge_decisions.items():
+                    if decision == "new":
+                        setattr(existing, field, record.parsed_data.get(field))
+    job.status = "confirmed"
+    notifications.on_import_confirmed(job)
+    db.commit()
+    return JobStatusResponse(
+        job_id = job.id,
+        status = job.status,
+        message="Import confirmed.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -359,14 +383,27 @@ def undo_import(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Rollback: DELETE WHERE import_job_id = job_id.
-    Only available within expires_at (24h window).
-    Releases Valkey locks.
-    """
-    # TODO: implement
-    raise HTTPException(status_code=501, detail="Not implemented")
+    job = db.query(ImportJob).filter(ImportJob.id == job_id, ImportJob.tenant_id == user.tenant_id).first()
+    if job is None:
+        raise HTTPException(status_code=404)
+    if datetime.now(timezone.utc) > job.expires_at:
+        raise HTTPException(status_code=422, detail="Import window expired")                                                                                  
+    if job.status == "confirmed":                                                                                                                             
+        raise HTTPException(status_code=422, detail="Cannot undo confirmed import")
 
+    entity_ids = [c.entity_id for c in job.conflicts]
+
+    db.query(ImportRecord).filter(ImportRecord.import_job_id == job.id).delete()
+    db.query(ImportConflict).filter(ImportConflict.import_job_id == job.id).delete()
+    release_locks(job.entity_type, entity_ids, job.id)
+    job.status = "rolled_back"
+
+    db.commit()
+    return JobStatusResponse(
+        job_id = job.id,
+        status = job.status,
+        message="Import rolled back.",
+    )    
 
 # ---------------------------------------------------------------------------
 # I1 — List jobs
