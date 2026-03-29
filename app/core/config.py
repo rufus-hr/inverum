@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
 
     VALKEY_URL: str = "valkey://localhost:6379/0"
+    VALKEY_PASSWORD: str = ""
 
     ENVIRONMENT: str = "dev"
     SEED_COMPLEXITY: str = "simple"

@@ -104,6 +104,7 @@ def get_effective_regional_settings(
             org_settings.get("language_id"),
             str(tenant_settings.language_id) if tenant_settings and tenant_settings.language_id else None,
         ),
+        "unit_display_settings": tenant_settings.unit_display_settings if tenant_settings else None,
     }
 
 
