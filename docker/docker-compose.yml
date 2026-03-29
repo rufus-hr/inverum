@@ -1,4 +1,13 @@
 services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: valkey-server --requirepass ${VALKEY_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    restart: unless-stopped
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -13,4 +22,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  valkey_data:
   minio_data:

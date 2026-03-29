@@ -49,5 +49,8 @@ class FileStorage:
         except S3Error:
             pass
 
+    def path_for_job(self, tenant_id: uuid.UUID, job_id: uuid.UUID, filename: str) -> str:
+        return _build_path(tenant_id, job_id, _ext(filename))
+
 
 storage = FileStorage()
