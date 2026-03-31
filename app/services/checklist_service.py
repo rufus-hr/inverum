@@ -111,7 +111,10 @@ def _should_create(
 
     if template.frequency == "per_employee_yearly":
         cutoff = datetime.now(timezone.utc) - timedelta(days=365)
-        q = q.filter(ChecklistCompletion.submitted_at >= cutoff)
+        q = q.filter(
+            (ChecklistCompletion.submitted_at >= cutoff) |
+            (ChecklistCompletion.confirmed_at >= cutoff)
+        )
 
     return not db.query(q.exists()).scalar()
 
