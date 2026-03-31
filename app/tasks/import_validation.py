@@ -6,6 +6,7 @@ Chunking: 1000 rows per subtask, parent tracks progress.
 
 import uuid
 import logging
+from sqlalchemy.exc import SQLAlchemyError
 from app.celery_app import celery_app
 from app.imports.storage import FileStorage, storage
 from app.imports.normalizers import FieldNormalizer
@@ -88,46 +89,68 @@ def validate_chunk(self, job_id: str, rows: list[dict], row_offset: int) -> dict
             return {"valid": 0, "conflict": 0, "error": 0}
         normalizer = _get_normalizer_for_job(job, db)
         for idx, row in enumerate(rows):
-            error_message = None
-            status = ""
-            normalized = {}
-            for field, value in row.items():
-                output = normalizer.normalize(field, value)
-                normalized[field] = output.value
-            check_mandetory_field = check_mandatory_fields(job.entity_type, normalized)
-            if check_mandetory_field:
-                logger.error("validate_chunk: missing required field: %s", check_mandetory_field)
-                status = "error"
-                error_count += 1
             row_number = row_offset + idx
-            conflict = None
-            if status != "error":
-                conflict = detect_conflict(db, job.entity_type, job.tenant_id, normalized, uuid.UUID(job_id))
-                if conflict.has_conflict:
-                    status = "conflict"
-                    conflict_count += 1
-                else:
-                    valid_count += 1
-                    status = "valid"
-            error_message = ", ".join(check_mandetory_field) if check_mandetory_field else None
+            sp = db.begin_nested()
+            try:
+                normalized = {}
+                for field, value in row.items():
+                    output = normalizer.normalize(field, value)
+                    normalized[field] = output.value
 
-            record = ImportRecord(                                                                                                                                    
-                import_job_id=job.id,                                                                                                                                 
-                row_number=row_number,                                                                                                                                
-                parsed_data=normalized,                               
-                status=status,                                                                                                                                        
-                error_message=error_message,
-            )                                                                                                                                                         
-            db.add(record)
-            db.flush()
-            if conflict and conflict.has_conflict:
-                conflict_record = ImportConflict(                                                                                                                                           
-                    import_job_id=job.id,                                                                                                                                 
-                    import_record_id=record.id,                                                                                                                           
-                    entity_type=job.entity_type,                                                                                                                          
-                    entity_id=conflict.existing_entity_id,
+                missing = check_mandatory_fields(job.entity_type, normalized)
+                if missing:
+                    status = "error"
+                    error_message = ", ".join(missing)
+                    error_count += 1
+                    conflict = None
+                else:
+                    conflict = detect_conflict(db, job.entity_type, job.tenant_id, normalized, uuid.UUID(job_id))
+                    if conflict.has_conflict:
+                        status = "conflict"
+                        conflict_count += 1
+                    else:
+                        status = "valid"
+                        valid_count += 1
+                    error_message = None
+
+                record = ImportRecord(
+                    import_job_id=job.id,
+                    row_number=row_number,
+                    parsed_data=normalized,
+                    status=status,
+                    error_message=error_message,
                 )
-                db.add(conflict_record)
+                db.add(record)
+                db.flush()
+
+                if conflict and conflict.has_conflict:
+                    db.add(ImportConflict(
+                        import_job_id=job.id,
+                        import_record_id=record.id,
+                        entity_type=job.entity_type,
+                        entity_id=conflict.existing_entity_id,
+                    ))
+                sp.commit()
+
+            except SQLAlchemyError as e:
+                sp.rollback()
+                error_count += 1
+                logger.error("DB error on row %d (job %s): %s", row_number, job_id, e)
+                try:
+                    err_sp = db.begin_nested()
+                    db.add(ImportRecord(
+                        import_job_id=job.id,
+                        row_number=row_number,
+                        parsed_data=row,
+                        status="error",
+                        error_message=f"DB error: {str(e)[:200]}",
+                    ))
+                    db.flush()
+                    err_sp.commit()
+                except SQLAlchemyError:
+                    err_sp.rollback()
+                    logger.error("Could not save error record for row %d", row_number)
+
         db.commit()
         return {"valid": valid_count, "conflict": conflict_count, "error": error_count}
 
