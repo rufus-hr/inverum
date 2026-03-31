@@ -1,9 +1,11 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, date, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import text
+from sqlalchemy import inspect as sa_inspect, DateTime, Date, Numeric
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 from app.core.valkey import client as valkey
 
@@ -14,6 +16,11 @@ from app.imports.parsers import CsvParser, ExcelParser
 from app.imports.storage import storage
 from app.imports.field_aliases import suggest_mapping
 from app.imports.conflicts import _MODEL_MAP, release_locks
+from app.models.asset import Asset
+from app.models.location import Location
+from app.models.employee import Employee
+from app.models.vendor import Vendor
+from app.models.department import Department
 from app.models.import_job import ImportJob, ImportMappingTemplate, ImportRecord, ImportConflict
 from app.models.sql_revert_log import SqlRevertLog
 from app.imports.notifications import notifications
@@ -33,7 +40,15 @@ from app.schemas.import_job import (
 )
 from app.schemas.pagination import PagedResponse
 
-_REVERTABLE_TABLES = {"assets", "locations", "employees", "vendors", "departments"}
+# Maps table name → ORM model for revert operations.
+# Adding a new revertable model = add one line here. No whitelist to forget.
+_REVERT_MODEL_MAP = {
+    "assets": Asset,
+    "locations": Location,
+    "employees": Employee,
+    "vendors": Vendor,
+    "departments": Department,
+}
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -429,28 +444,57 @@ def preview_import(
 # H2c — Revert (60s window after confirm)
 # ---------------------------------------------------------------------------
 
+def _coerce_revert_values(Model, values: dict) -> dict:
+    """
+    Convert JSONB-stored primitives back to proper Python types for ORM setattr.
+    audit_listener serializes UUID→str, datetime→ISO str, Decimal→float.
+    """
+    col_types = {
+        col_attr.key: col_attr.columns[0].type
+        for col_attr in sa_inspect(Model).mapper.column_attrs
+    }
+    result = {}
+    for key, val in values.items():
+        if val is None or key not in col_types:
+            result[key] = val
+            continue
+        col_type = col_types[key]
+        if isinstance(col_type, PG_UUID) and isinstance(val, str):
+            result[key] = uuid.UUID(val)
+        elif isinstance(col_type, DateTime) and isinstance(val, str):
+            result[key] = datetime.fromisoformat(val)
+        elif isinstance(col_type, Date) and isinstance(val, str):
+            result[key] = date.fromisoformat(val)
+        elif isinstance(col_type, Numeric) and val is not None:
+            result[key] = Decimal(str(val))
+        else:
+            result[key] = val
+    return result
+
+
 def _execute_revert(db: Session, record: SqlRevertLog) -> None:
     table = record.revert_data["table"]
-    if table not in _REVERTABLE_TABLES:
+    Model = _REVERT_MODEL_MAP.get(table)
+    if Model is None:
         raise ValueError(f"Cannot revert table: {table}")
 
     if record.action == "create":
-        pk = record.revert_data["pk"]
-        db.execute(text(f"DELETE FROM {table} WHERE id = :pk"), {"pk": pk})
+        pk = uuid.UUID(record.revert_data["pk"])
+        obj = db.get(Model, pk)
+        if obj:
+            db.delete(obj)
 
     elif record.action == "update":
-        pk = record.revert_data["pk"]
-        old_values = record.revert_data["old_values"]
-        set_clause = ", ".join(f"{k} = :{k}" for k in old_values)
-        params = dict(old_values)
-        params["pk"] = pk
-        db.execute(text(f"UPDATE {table} SET {set_clause} WHERE id = :pk"), params)
+        pk = uuid.UUID(record.revert_data["pk"])
+        old_values = _coerce_revert_values(Model, record.revert_data["old_values"])
+        obj = db.get(Model, pk)
+        if obj:
+            for key, value in old_values.items():
+                setattr(obj, key, value)
 
     elif record.action == "delete":
-        old_values = record.revert_data["old_values"]
-        cols = ", ".join(old_values.keys())
-        placeholders = ", ".join(f":{k}" for k in old_values.keys())
-        db.execute(text(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"), old_values)
+        old_values = _coerce_revert_values(Model, record.revert_data["old_values"])
+        db.add(Model(**old_values))
 
 
 @router.post("/{job_id}/revert", response_model=JobStatusResponse)

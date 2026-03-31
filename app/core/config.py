@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     INTERNAL_API_KEY: str = "change-me-in-production"
 
+    DELL_API_KEY: str = ""
+    DELL_API_SECRET: str = ""
+
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "inverum"
     MINIO_SECRET_KEY: str = "devpassword"
