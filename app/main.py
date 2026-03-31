@@ -31,6 +31,7 @@ from app.routers import audit_log as audit_log_router
 from app.routers import onboarding as onboarding_router
 from app.routers import imports as imports_router
 from app.routers import departments as departments_router
+from app.routers import checklists as checklists_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,6 +74,7 @@ app.include_router(audit_log_router.router, prefix="/api/v1")
 app.include_router(onboarding_router.router, prefix="/api/v1")
 app.include_router(imports_router.router, prefix="/api/v1")
 app.include_router(departments_router.router, prefix="/api/v1")
+app.include_router(checklists_router.router, prefix="/api/v1")
 
 
 @app.get("/health")
