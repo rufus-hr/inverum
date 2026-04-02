@@ -18,12 +18,9 @@ from app.schemas.asset_assignment import (
     AssignmentPendingResponse,
 )
 from app.schemas.pagination import PagedResponse
-from app.services import checklist_service
+from app.services import event_bus_service
 
 router = APIRouter(prefix="/asset-assignments", tags=["asset-assignments"])
-
-# mobility_type values that allow free assignment to user/workplace
-_ASSIGNABLE_MOBILITY = {"personal", "workplace", "shared"}
 
 
 @router.get("/", response_model=PagedResponse[AssetAssignmentResponse])
@@ -75,14 +72,12 @@ def assign_asset(
 ) -> Union[AssetAssignmentResponse, AssignmentPendingResponse]:
     asset = _get_asset(db, data.asset_id, user.tenant_id)
 
-    # Fixed assets cannot be assigned to a person or workplace
     if asset.mobility_type == "fixed" and data.assigned_to_type in ("user", "workplace"):
         raise HTTPException(
             status_code=422,
             detail="Asset has mobility_type='fixed' and cannot be assigned to a user or workplace",
         )
 
-    # Block if a checklist is already in progress for this asset
     if asset.is_checklist_pending:
         raise HTTPException(
             status_code=422,
@@ -90,7 +85,7 @@ def assign_asset(
         )
 
     existing = _active_assignment(db, asset.id)
-    event = checklist_service.TRIGGER_ASSIGNED_TO_USER if existing else checklist_service.TRIGGER_STOCK_TO_ASSIGNED
+    event_type = "asset_reassigned" if existing else "asset_assigned"
 
     pending_transition = {
         "type": "assignment_change",
@@ -101,22 +96,19 @@ def assign_asset(
         "close_assignment_id": str(existing.id) if existing else None,
     }
 
-    completions = checklist_service.trigger_event(
+    event_bus_service.publish(
         db=db,
-        event=event,
-        asset=asset,
-        pending_transition=pending_transition,
-        triggered_by_user_id=user.id,
+        tenant_id=user.tenant_id,
+        event_type=event_type,
+        entity_type="asset",
+        entity_id=asset.id,
+        payload={
+            "pending_transition": pending_transition,
+            "triggered_by_user_id": str(user.id),
+        },
     )
 
-    if completions:
-        db.commit()
-        return AssignmentPendingResponse(
-            status="awaiting_checklist",
-            completion_ids=[c.id for c in completions],
-        )
-
-    # No checklist — execute immediately
+    # Execute assignment immediately — checklist (if any) created async by subscriber
     now = datetime.now(timezone.utc)
     if existing:
         existing.returned_at = now
@@ -137,20 +129,13 @@ def assign_asset(
     return new_assignment
 
 
-@router.post(
-    "/{assignment_id}/return",
-    responses={
-        200: {"model": AssetAssignmentResponse},
-        202: {"model": AssignmentPendingResponse},
-    },
-    status_code=200,
-)
+@router.post("/{assignment_id}/return", response_model=AssetAssignmentResponse)
 def return_asset(
     assignment_id: uuid.UUID,
     data: AssetAssignReturn,
     user: User = Depends(require_permission("asset_assignment:modify")),
     db: Session = Depends(get_db),
-) -> Union[AssetAssignmentResponse, AssignmentPendingResponse]:
+):
     a = db.query(AssetAssignment).filter(
         AssetAssignment.id == assignment_id,
         AssetAssignment.tenant_id == user.tenant_id,
@@ -168,29 +153,23 @@ def return_asset(
             detail="Asset has a pending checklist — complete or cancel it before returning",
         )
 
-    pending_transition = {
-        "type": "return_to_stock",
-        "assignment_id": str(a.id),
-        "returned_by_id": str(user.id),
-        "notes": data.notes,
-    }
-
-    completions = checklist_service.trigger_event(
+    event_bus_service.publish(
         db=db,
-        event=checklist_service.TRIGGER_ASSIGNED_TO_STOCK,
-        asset=asset,
-        pending_transition=pending_transition,
-        triggered_by_user_id=user.id,
+        tenant_id=user.tenant_id,
+        event_type="asset_returned",
+        entity_type="asset",
+        entity_id=asset.id,
+        payload={
+            "pending_transition": {
+                "type": "return_to_stock",
+                "assignment_id": str(a.id),
+                "returned_by_id": str(user.id),
+                "notes": data.notes,
+            },
+            "triggered_by_user_id": str(user.id),
+        },
     )
 
-    if completions:
-        db.commit()
-        return AssignmentPendingResponse(
-            status="awaiting_checklist",
-            completion_ids=[c.id for c in completions],
-        )
-
-    # No checklist — execute immediately
     now = datetime.now(timezone.utc)
     a.returned_at = now
     a.returned_by = user.id
