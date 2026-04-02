@@ -11,6 +11,7 @@ celery_app = Celery(
     include=[
         "app.tasks.import_validation",
         "app.tasks.import_enrich",
+        "app.tasks.process_event",
     ],
 )
 
@@ -26,5 +27,6 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.import_validation.*": {"queue": "inverum-worker-imports"},
         "app.tasks.import_enrich.*": {"queue": "inverum-worker-default"},
+        "app.tasks.process_event.*": {"queue": "inverum-worker-default"},
     },
 )
