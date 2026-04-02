@@ -32,3 +32,8 @@ class AssetAssignmentResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AssignmentPendingResponse(BaseModel):
+    status: str = "awaiting_checklist"
+    completion_ids: list[uuid.UUID]

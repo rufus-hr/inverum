@@ -481,22 +481,40 @@ def _execute_pending_transition(db: Session, completion: ChecklistCompletion) ->
 
     elif t_type == "assignment_change":
         from app.models.asset_assignment import AssetAssignment
-        # Close existing active assignment
-        existing = db.query(AssetAssignment).filter(
-            AssetAssignment.asset_id == asset.id,
-            AssetAssignment.unassigned_at == None,
-        ).first()
-        if existing:
-            existing.unassigned_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        close_id = transition.get("close_assignment_id")
+        if close_id:
+            existing = db.get(AssetAssignment, uuid.UUID(close_id))
+            if existing and existing.returned_at is None:
+                existing.returned_at = now
+                existing.is_active = False
 
         assigned_to_type = transition.get("assigned_to_type")
         assigned_to_id = transition.get("assigned_to_id")
+        assigned_by_id = transition.get("assigned_by_id")
         if assigned_to_type and assigned_to_id:
             db.add(AssetAssignment(
                 tenant_id=asset.tenant_id,
                 asset_id=asset.id,
                 assigned_to_type=assigned_to_type,
                 assigned_to_id=uuid.UUID(assigned_to_id),
+                assigned_by=uuid.UUID(assigned_by_id) if assigned_by_id else completion.triggered_by_user_id,
+                notes=transition.get("notes"),
             ))
+
+    elif t_type == "return_to_stock":
+        from app.models.asset_assignment import AssetAssignment
+        now = datetime.now(timezone.utc)
+        assignment_id = transition.get("assignment_id")
+        returned_by_id = transition.get("returned_by_id")
+        if assignment_id:
+            a = db.get(AssetAssignment, uuid.UUID(assignment_id))
+            if a and a.returned_at is None:
+                a.returned_at = now
+                a.is_active = False
+                if returned_by_id:
+                    a.returned_by = uuid.UUID(returned_by_id)
+                if transition.get("notes"):
+                    a.notes = transition["notes"]
 
     asset.is_checklist_pending = False
