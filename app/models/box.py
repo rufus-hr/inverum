@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Index, Text
+from sqlalchemy import String, DateTime, ForeignKey, Index, Text, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -12,6 +12,11 @@ class Box(Base):
         Index("idx_boxes_location", "location_id", postgresql_where="deleted_at IS NULL"),
         Index("idx_boxes_parent", "parent_box_id", postgresql_where="deleted_at IS NULL"),
         Index("idx_boxes_status", "tenant_id", "status", postgresql_where="deleted_at IS NULL"),
+        Index("idx_boxes_storage_unit", "storage_unit_id", postgresql_where="deleted_at IS NULL"),
+        CheckConstraint(
+            "status = 'in_transit' OR num_nonnulls(location_id, storage_unit_id, parent_box_id) = 1",
+            name="chk_box_single_parent",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
@@ -25,7 +30,11 @@ class Box(Base):
     )
     # box-in-box (paleta → kutija → item)
 
-    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
+
+    storage_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("storage_units.id"), nullable=True
+    )
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
     # open | sealed | in_transit | delivered | retired

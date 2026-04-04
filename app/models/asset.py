@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone, date
 from decimal import Decimal
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Text, Date, Numeric
+from sqlalchemy import String, Boolean, Integer, DateTime, ForeignKey, Text, Date, Numeric, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
@@ -10,6 +10,12 @@ from app.core.database import Base
 class Asset(Base):
     __tablename__ = "assets"
     __revertable__ = True
+    __table_args__ = (
+        CheckConstraint(
+            "num_nonnulls(location_id, storage_unit_id, box_id) = 1",
+            name="chk_asset_single_parent",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
@@ -51,6 +57,11 @@ class Asset(Base):
     box_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("boxes.id"), nullable=True
     )
+    storage_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("storage_units.id"), nullable=True
+    )
+    security_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # 1=standard, 2=restricted, 3=confidential, 4=secret, 5=trezor
     mobility_type: Mapped[str] = mapped_column(String(50), nullable=False, default='personal')
     purchased_from_vendor_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("vendors.id"), nullable=True

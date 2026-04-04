@@ -7,35 +7,25 @@ from app.dependencies.auth import require_permission
 from app.models.user import User
 from app.models.asset import Asset
 from app.schemas.asset import AssetCreate, AssetModify, AssetResponse
-from app.schemas.pagination import PagedResponse
-from app.dependencies.pagination import PaginationParams
+from app.schemas.pagination import CursorPagedResponse
+from app.dependencies.pagination import CursorPaginationParams, apply_cursor_pagination
 
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
-@router.get("/", response_model=PagedResponse[AssetResponse])
+@router.get("/", response_model=CursorPagedResponse[AssetResponse])
 def list_assets(
     user: User = Depends(require_permission("asset:read")),
-    pagination: PaginationParams = Depends(PaginationParams),
+    pagination: CursorPaginationParams = Depends(CursorPaginationParams),
     db: Session = Depends(get_db),
 ):
     query = db.query(Asset).filter(
         Asset.tenant_id == user.tenant_id,
         Asset.deleted_at == None,
     )
-    
-    total = query.count()
-    items = query.offset(pagination.offset).limit(pagination.limit).all()
-    pages = (total + pagination.limit - 1) // pagination.limit
-
-    return PagedResponse(
-      items=items,                                                                                                                                          
-      total=total,                                                                                                                                          
-      page=pagination.page,
-      limit=pagination.limit,                                                                                                                               
-      pages=pages,                                          
-  )                                                                                                                                                         
+    items, next_cursor = apply_cursor_pagination(query, Asset, pagination)
+    return CursorPagedResponse(items=items, next_cursor=next_cursor, limit=pagination.limit)                                                                                                                                                         
 
 
 

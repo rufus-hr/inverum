@@ -1,4 +1,8 @@
+import base64
+import uuid
+from datetime import datetime, timezone
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 
 
 class PaginationParams:
@@ -29,16 +33,12 @@ class CursorPaginationParams:
         self.cursor = _decode_cursor(cursor) if cursor else None
 
     @staticmethod
-    def encode(created_at, id) -> str:
-        import base64
-        raw = f"{created_at.isoformat()}|{id}"
+    def encode(created_at, row_id) -> str:
+        raw = f"{created_at.isoformat()}|{row_id}"
         return base64.urlsafe_b64encode(raw.encode()).decode()
 
 
 def _decode_cursor(cursor: str) -> tuple:
-    import base64
-    from datetime import datetime, timezone
-    import uuid
     try:
         raw = base64.urlsafe_b64decode(cursor.encode()).decode()
         ts_str, id_str = raw.split("|", 1)
@@ -48,3 +48,27 @@ def _decode_cursor(cursor: str) -> tuple:
         return (ts, uuid.UUID(id_str))
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid cursor")
+
+
+def apply_cursor_pagination(query, model, params: CursorPaginationParams):
+    """
+    Apply keyset pagination to a SQLAlchemy query.
+    Sorts by (created_at DESC, id DESC). Returns (items, next_cursor).
+    next_cursor is None when there are no more pages.
+    """
+    query = query.order_by(model.created_at.desc(), model.id.desc())
+    if params.cursor:
+        cursor_ts, cursor_id = params.cursor
+        query = query.filter(
+            or_(
+                model.created_at < cursor_ts,
+                and_(model.created_at == cursor_ts, model.id < cursor_id),
+            )
+        )
+    items = query.limit(params.limit + 1).all()
+    next_cursor = None
+    if len(items) > params.limit:
+        items = items[:-1]
+        last = items[-1]
+        next_cursor = CursorPaginationParams.encode(last.created_at, last.id)
+    return items, next_cursor

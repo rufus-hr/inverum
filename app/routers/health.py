@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.core.database import SessionLocal
 from app.core.config import settings
@@ -8,16 +9,17 @@ router = APIRouter(tags=["health"])
 
 def _ping_db(url: str | None = None) -> bool:
     try:
-        from sqlalchemy import create_engine
-        engine = create_engine(url) if url else None
-        if engine:
+        if url:
+            from sqlalchemy import create_engine
+            engine = create_engine(url)
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            return True
-        # primary DB via existing pool
-        db = SessionLocal()
-        db.execute(text("SELECT 1"))
-        db.close()
+        else:
+            db = SessionLocal()
+            try:
+                db.execute(text("SELECT 1"))
+            finally:
+                db.close()
         return True
     except Exception:
         return False
@@ -48,9 +50,17 @@ def _ping_minio() -> bool:
 
 
 @router.get("/health/live")
-def liveness():
-    """K8s liveness — is the process alive?"""
-    return {"status": "ok"}
+def liveness(request: Request):
+    """
+    K8s liveness — is the process alive and internally healthy?
+    Reads from self-test cache (updated every 30s by background task).
+    Returns 503 if: not yet run, stale (>60s), or any HARD check failed.
+    """
+    from app.core.self_test import get_liveness
+    healthy, detail = get_liveness(request.app)
+    if not healthy:
+        return JSONResponse(status_code=503, content=detail)
+    return detail
 
 
 @router.get("/health/start")

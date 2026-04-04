@@ -7,31 +7,27 @@ from app.dependencies.auth import require_permission
 from app.models.user import User
 from app.models.audit_log import AuditLog
 from app.schemas.audit_log import AuditLogResponse
-from app.schemas.pagination import PagedResponse
-from app.dependencies.pagination import PaginationParams
+from app.schemas.pagination import CursorPagedResponse
+from app.dependencies.pagination import CursorPaginationParams, apply_cursor_pagination
 
 router = APIRouter(prefix="/audit_log", tags=["audit_log"])
 
 
-@router.get("/", response_model=PagedResponse[AuditLogResponse])
+@router.get("/", response_model=CursorPagedResponse[AuditLogResponse])
 def list_audit_logs(
     entity_type: str | None = Query(default=None),
     entity_id: uuid.UUID | None = Query(default=None),
-    pagination: PaginationParams = Depends(PaginationParams),
+    pagination: CursorPaginationParams = Depends(CursorPaginationParams),
     user: User = Depends(require_permission("audit_log:read")),
     db: Session = Depends(get_db),
 ):
-    query = db.query(AuditLog).filter(
-        AuditLog.tenant_id == user.tenant_id,
-    )
+    query = db.query(AuditLog).filter(AuditLog.tenant_id == user.tenant_id)
     if entity_type:
         query = query.filter(AuditLog.entity_type == entity_type)
     if entity_id:
         query = query.filter(AuditLog.entity_id == entity_id)
-    total = query.count()
-    items = query.order_by(AuditLog.created_at.desc()).offset(pagination.offset).limit(pagination.limit).all()
-    pages = (total + pagination.limit - 1) // pagination.limit
-    return PagedResponse(items=items, total=total, page=pagination.page, limit=pagination.limit, pages=pages)
+    items, next_cursor = apply_cursor_pagination(query, AuditLog, pagination)
+    return CursorPagedResponse(items=items, next_cursor=next_cursor, limit=pagination.limit)
 
 
 @router.get("/{audit_log_id}", response_model=AuditLogResponse)
