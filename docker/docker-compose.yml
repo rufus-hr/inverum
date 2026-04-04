@@ -1,26 +1,123 @@
 services:
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-inverumdb}
+      POSTGRES_USER: ${DATABASE_USER:-inverum}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-devpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-inverum} -d ${DATABASE_NAME:-inverumdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   valkey:
     image: valkey/valkey:8-alpine
-    command: valkey-server --requirepass ${VALKEY_PASSWORD}
+    command: valkey-server --requirepass ${VALKEY_PASSWORD:-devpassword}
     ports:
       - "6379:6379"
     volumes:
       - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD:-devpassword}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: inverum
-      MINIO_ROOT_PASSWORD: devpassword
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-inverum}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-devpassword}
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # web console → http://localhost:9001
+      - "9000:9000"
+      - "9001:9001"   # console → http://localhost:9001
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      VALKEY_URL: valkey://:${VALKEY_PASSWORD:-devpassword}@valkey:6379/0
+      MINIO_ENDPOINT: minio:9000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      celery -A app.tasks.celery_app worker
+      --loglevel=info
+      --queues=inverum-worker-default,inverum-worker-imports,inverum-worker-reports,inverum-worker-critical
+      --concurrency=4
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      VALKEY_URL: valkey://:${VALKEY_PASSWORD:-devpassword}@valkey:6379/0
+      MINIO_ENDPOINT: minio:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: >
+      celery -A app.tasks.celery_app beat
+      --loglevel=info
+      --scheduler celery.beat:PersistentScheduler
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      VALKEY_URL: valkey://:${VALKEY_PASSWORD:-devpassword}@valkey:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   valkey_data:
   minio_data:
