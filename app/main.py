@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -47,6 +48,8 @@ from app.routers import consumables as consumables_router
 from app.routers import accessories as accessories_router
 from app.routers import maintenance_schedules as maintenance_schedules_router
 from app.routers import external_services as external_services_router
+from app.routers import asset_events as asset_events_router
+from app.routers import storage_units as storage_units_router
 
 
 @asynccontextmanager
@@ -58,7 +61,29 @@ async def lifespan(app: FastAPI):
         logger.exception("Seed failed during startup.")
     finally:
         db.close()
-    yield
+
+    from app.core.self_test import self_test_loop, _checks_sync
+    loop = asyncio.get_event_loop()
+    try:
+        checks = await loop.run_in_executor(None, _checks_sync)
+        from datetime import datetime, timezone
+        app.state.self_test = {
+            "healthy": all(checks.values()),
+            "checked_at": datetime.now(timezone.utc),
+            "checks": checks,
+        }
+    except Exception:
+        logger.exception("Initial self-test failed.")
+
+    task = asyncio.create_task(self_test_loop(app))
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -109,3 +134,7 @@ app.include_router(consumables_router.router, prefix="/api/v1")
 app.include_router(accessories_router.router, prefix="/api/v1")
 app.include_router(maintenance_schedules_router.router, prefix="/api/v1")
 app.include_router(external_services_router.router, prefix="/api/v1")
+app.include_router(asset_events_router.router, prefix="/api/v1")
+app.include_router(storage_units_router.router, prefix="/api/v1")
+app.include_router(storage_units_router.asset_router, prefix="/api/v1")
+app.include_router(storage_units_router.box_router, prefix="/api/v1")
