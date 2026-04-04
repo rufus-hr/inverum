@@ -63,6 +63,9 @@ class Asset(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_checklist_pending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pending_transition: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # holds deferred operation while checklist is in progress
+    # e.g. {"type": "assignment_change", "close_assignment_id": "...", "new_assigned_to_type": "user", ...}
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
