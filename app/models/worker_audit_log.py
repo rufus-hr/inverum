@@ -9,7 +9,7 @@ from app.core.database import Base
 class WorkerAuditLog(Base):
     __tablename__ = "worker_audit_log"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
     import_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("import_jobs.id"), nullable=True)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id"), nullable=True)

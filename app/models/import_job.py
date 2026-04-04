@@ -9,7 +9,7 @@ from app.core.database import Base
 class ImportJob(Base):
     __tablename__ = "import_jobs"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
@@ -49,7 +49,7 @@ class ImportJob(Base):
 class ImportRecord(Base):
     __tablename__ = "import_records"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     import_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id"), nullable=False)
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     parsed_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -67,7 +67,7 @@ class ImportRecord(Base):
 class ImportConflict(Base):
     __tablename__ = "import_conflicts"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     import_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_jobs.id"), nullable=False)
     import_record_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("import_records.id"), nullable=False, unique=True
@@ -98,7 +98,7 @@ class ImportMappingTemplate(Base):
         UniqueConstraint("tenant_id", "name", "entity_type", name="uq_mapping_template"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)

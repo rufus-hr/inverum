@@ -10,7 +10,7 @@ class Permission(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
     code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -8,7 +8,7 @@ from app.core.database import Base
 class ChecklistTemplate(Base):
     __tablename__ = "checklist_templates"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     trigger_event: Mapped[str] = mapped_column(String(100), nullable=False)

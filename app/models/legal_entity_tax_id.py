@@ -9,7 +9,7 @@ class LegalEntityTaxID(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
 
     legal_entity_id: Mapped[uuid.UUID] = mapped_column(

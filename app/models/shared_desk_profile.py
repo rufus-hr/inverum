@@ -12,7 +12,7 @@ class SharedDeskProfile(Base):
         Index("idx_shared_desk_profiles_location", "location_id", postgresql_where="deleted_at IS NULL"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

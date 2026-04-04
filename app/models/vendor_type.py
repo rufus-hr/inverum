@@ -10,7 +10,7 @@ class VendorType(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("vendors.id"),

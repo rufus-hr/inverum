@@ -11,7 +11,7 @@ class Location(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
 
     organization_id: Mapped[uuid.UUID | None] = mapped_column(

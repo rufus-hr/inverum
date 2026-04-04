@@ -15,7 +15,7 @@ class Workspace(Base):
         Index("idx_workspaces_profile", "shared_desk_profile_id", postgresql_where="deleted_at IS NULL"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
