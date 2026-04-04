@@ -21,6 +21,13 @@ class Settings(BaseSettings):
 
     INTERNAL_API_KEY: str = "change-me-in-production"
 
+    OTEL_ENABLED: bool = False
+    OTEL_ENDPOINT: str = "http://localhost:4317"
+    OTEL_SERVICE_NAME: str = "inverum"
+
+    DATABASE_REPORTING_URL: str = ""
+    # postgresql://haproxy:5001/inverumdb — standby replica for readiness check
+
     DELL_API_KEY: str = ""
     DELL_API_SECRET: str = ""
 
