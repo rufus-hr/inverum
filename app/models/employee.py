@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone, date
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Date
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Date, Integer, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -52,6 +53,13 @@ class Employee(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # IT admin only — never in public reports/exports
+    internal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pebcak_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # auto-increments when ticket closed as "User Error"; auto-tags PEBCAK if score > 5 in 12mo
+    internal_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # ["PEBCAK", "ID10T", "VIP", "handle_with_care"]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
