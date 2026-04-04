@@ -17,10 +17,11 @@ class VendorContract(Base):
         ForeignKey("tenants.id"),
         nullable=False
     )
-    vendor_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("vendors.id"),
-        nullable=False
-    )
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vendors.id"), nullable=False)
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # "Godišnji support ugovor 2026", "Okvirni ugovor nabava IT opreme"
+
     legal_entity_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("legal_entities.id"),
         nullable=True
@@ -40,6 +41,9 @@ class VendorContract(Base):
     account_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     support_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     support_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    # potpisani PDF u MinIO
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -52,6 +52,13 @@ class Asset(Base):
         ForeignKey("boxes.id"), nullable=True
     )
     mobility_type: Mapped[str] = mapped_column(String(50), nullable=False, default='personal')
+    purchased_from_vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("vendors.id"), nullable=True
+    )
+    purchase_invoice_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vendor_contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("vendor_contracts.id"), nullable=True
+    )
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     purchase_cost: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
     purchase_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
