@@ -13,7 +13,7 @@ class Asset(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id"),
@@ -44,6 +44,15 @@ class Asset(Base):
     status_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("reference_data.id"),
         nullable=True
+    )
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("asset_categories.id"), nullable=True
+    )
+    box_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("boxes.id"), nullable=True
+    )
+    plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("plans.id"), nullable=True
     )
     mobility_type: Mapped[str] = mapped_column(String(50), nullable=False, default='personal')
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)

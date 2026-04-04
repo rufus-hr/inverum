@@ -9,7 +9,7 @@ from app.core.database import Base
 class ChecklistCompletion(Base):
     __tablename__ = "checklist_completions"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
     template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("checklist_templates.id"), nullable=False)

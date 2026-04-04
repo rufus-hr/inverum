@@ -9,7 +9,7 @@ from app.core.database import Base
 class Language(Base):
     __tablename__ = "languages"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # hr, en, de
     name: Mapped[str] = mapped_column(String(100), nullable=False)              # Hrvatski, English
     babel_code: Mapped[str] = mapped_column(String(20), nullable=False)         # hr_HR, de_DE
@@ -29,7 +29,7 @@ class Language(Base):
 class Region(Base):
     __tablename__ = "regions"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # HR, DE, US
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     default_language_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("languages.id"), nullable=False)
@@ -60,7 +60,7 @@ class RegionIdentifierType(Base):
         UniqueConstraint("region_id", "code", name="uq_region_identifier_type"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     region_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("regions.id"), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)               # oib, vat_id, mbs, steuernummer
     label: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -9,7 +9,7 @@ from app.core.database import Base
 class EventBus(Base):
     __tablename__ = "event_bus"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)

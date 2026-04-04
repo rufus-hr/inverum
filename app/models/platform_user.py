@@ -9,7 +9,7 @@ from app.core.database import Base
 class PlatformUser(Base):
     __tablename__ = "platform_users"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -31,7 +31,7 @@ class PlatformIdentity(Base):
         UniqueConstraint("provider", "provider_id", name="uq_platform_identity_provider"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     platform_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("platform_users.id"), nullable=False)
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -49,7 +49,7 @@ class PlatformIdentity(Base):
 class PlatformUserRole(Base):
     __tablename__ = "platform_user_roles"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     platform_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("platform_users.id"), nullable=False)
     role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

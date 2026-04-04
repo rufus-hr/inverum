@@ -10,7 +10,7 @@ class AssetDocumentItem(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
-        default=uuid.uuid4
+        default=uuid.uuid7
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("asset_documents.id"),

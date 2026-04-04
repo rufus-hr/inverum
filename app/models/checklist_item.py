@@ -8,7 +8,7 @@ from app.core.database import Base
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
     template_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("checklist_templates.id"), nullable=False)
     depends_on_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("checklist_items.id"), nullable=True)
