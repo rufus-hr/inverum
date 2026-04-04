@@ -11,3 +11,8 @@ venv/
 .DS_Store
 inverum-claude-context.md
 inverum-context-diff-*.md
+inverum-*.md
+inverum-*.zip
+repomix-output.xml
+claude.txt
+*.zip
