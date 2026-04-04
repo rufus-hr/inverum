@@ -51,9 +51,6 @@ class Asset(Base):
     box_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("boxes.id"), nullable=True
     )
-    plan_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("plans.id"), nullable=True
-    )
     mobility_type: Mapped[str] = mapped_column(String(50), nullable=False, default='personal')
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     purchase_cost: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
