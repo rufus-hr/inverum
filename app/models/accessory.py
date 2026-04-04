@@ -31,6 +31,7 @@ class Accessory(Base):
     unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
 
+    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
     linked_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("assets.id"), nullable=True
     )

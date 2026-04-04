@@ -29,6 +29,7 @@ class StockItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     minimum_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unit_cost: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

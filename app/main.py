@@ -1,14 +1,18 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.rate_limit import limiter
 from app.seeds.run import run_seeds
 from app.core.audit_listener import register_listeners
 
 register_listeners()
 
 logger = logging.getLogger(__name__)
+
 from app.routers import auth as auth_router
 from app.routers import tenants as tenants_router
 from app.routers import reference_data as reference_data_router
@@ -33,6 +37,17 @@ from app.routers import imports as imports_router
 from app.routers import departments as departments_router
 from app.routers import checklists as checklists_router
 from app.routers import workspaces as workspaces_router
+from app.routers import health as health_router
+from app.routers import boxes as boxes_router
+from app.routers import plans as plans_router
+from app.routers import asset_categories as asset_categories_router
+from app.routers import work_orders as work_orders_router
+from app.routers import components as components_router
+from app.routers import consumables as consumables_router
+from app.routers import accessories as accessories_router
+from app.routers import maintenance_schedules as maintenance_schedules_router
+from app.routers import external_services as external_services_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,6 +68,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# OTel — no-op when OTEL_ENABLED=false
+from app.core.telemetry import setup_telemetry
+setup_telemetry(app)
+
+app.include_router(health_router.router)
 app.include_router(auth_router.router, prefix="/api/v1")
 app.include_router(tenants_router.router, prefix="/api/v1")
 app.include_router(reference_data_router.router, prefix="/api/v1")
@@ -77,8 +100,12 @@ app.include_router(imports_router.router, prefix="/api/v1")
 app.include_router(departments_router.router, prefix="/api/v1")
 app.include_router(checklists_router.router, prefix="/api/v1")
 app.include_router(workspaces_router.router, prefix="/api/v1")
-
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+app.include_router(boxes_router.router, prefix="/api/v1")
+app.include_router(plans_router.router, prefix="/api/v1")
+app.include_router(asset_categories_router.router, prefix="/api/v1")
+app.include_router(work_orders_router.router, prefix="/api/v1")
+app.include_router(components_router.router, prefix="/api/v1")
+app.include_router(consumables_router.router, prefix="/api/v1")
+app.include_router(accessories_router.router, prefix="/api/v1")
+app.include_router(maintenance_schedules_router.router, prefix="/api/v1")
+app.include_router(external_services_router.router, prefix="/api/v1")
