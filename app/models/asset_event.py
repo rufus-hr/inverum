@@ -34,6 +34,9 @@ class AssetEvent(Base):
     actor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Denormalizirano — ostaje čak i ako user obriše račun
 
+    diff_: Mapped[dict | None] = mapped_column("diff", JSONB, nullable=True)
+    # Git-style diff: {"assigned_to": ["-Ana Kovač", "+Marko Horvat"], "status": ["-storage", "+assigned"]}
+
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     # ticket_ref, work_order_id, assignment_id, checklist_completion_id...
 

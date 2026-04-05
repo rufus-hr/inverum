@@ -43,6 +43,8 @@ class Location(Base):
     address_state: Mapped[str] = mapped_column(String(100), nullable=True)
     address_country: Mapped[str] = mapped_column(String(2), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_stock_location: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # True = može imati stock threshold (stock_policies)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

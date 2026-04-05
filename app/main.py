@@ -50,6 +50,7 @@ from app.routers import maintenance_schedules as maintenance_schedules_router
 from app.routers import external_services as external_services_router
 from app.routers import asset_events as asset_events_router
 from app.routers import storage_units as storage_units_router
+from app.routers import supplies as supplies_router
 
 
 @asynccontextmanager
@@ -138,3 +139,5 @@ app.include_router(asset_events_router.router, prefix="/api/v1")
 app.include_router(storage_units_router.router, prefix="/api/v1")
 app.include_router(storage_units_router.asset_router, prefix="/api/v1")
 app.include_router(storage_units_router.box_router, prefix="/api/v1")
+app.include_router(supplies_router.router, prefix="/api/v1")
+app.include_router(supplies_router.stock_router, prefix="/api/v1")

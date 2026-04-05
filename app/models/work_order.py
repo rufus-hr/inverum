@@ -59,7 +59,10 @@ class WorkOrder(Base):
     created_by_event: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("event_bus.id"), nullable=True
     )
-    # koji event_bus zapis kreirao ovaj WO — NULL = manualni
+    triggered_by_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("event_bus.id"), nullable=True
+    )
+    # NULL = manualni WO, UUID = koji event kreirao ovaj WO (Jira webhook, scheduled maintenance...)
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
