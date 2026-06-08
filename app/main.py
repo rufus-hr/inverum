@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
@@ -49,6 +50,7 @@ from app.routers import accessories as accessories_router
 from app.routers import maintenance_schedules as maintenance_schedules_router
 from app.routers import external_services as external_services_router
 from app.routers import asset_events as asset_events_router
+from app.routers import dashboard as dashboard_router
 from app.routers import storage_units as storage_units_router
 from app.routers import supplies as supplies_router
 
@@ -94,6 +96,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # dev only — restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -102,6 +112,7 @@ from app.core.telemetry import setup_telemetry
 setup_telemetry(app)
 
 app.include_router(health_router.router)
+app.include_router(dashboard_router.router, prefix="/api/v1")
 app.include_router(auth_router.router, prefix="/api/v1")
 app.include_router(tenants_router.router, prefix="/api/v1")
 app.include_router(reference_data_router.router, prefix="/api/v1")
@@ -141,3 +152,4 @@ app.include_router(storage_units_router.asset_router, prefix="/api/v1")
 app.include_router(storage_units_router.box_router, prefix="/api/v1")
 app.include_router(supplies_router.router, prefix="/api/v1")
 app.include_router(supplies_router.stock_router, prefix="/api/v1")
+app.include_router(supplies_router.movements_router, prefix="/api/v1")
