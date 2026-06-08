@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from datetime import timedelta
 from app.core.config import settings
 
 # Valkey is Redis-compatible — Celery uses redis:// protocol
@@ -15,6 +16,7 @@ celery_app = Celery(
         "app.tasks.process_event",
         "app.tasks.cleanup",
         "app.tasks.asset_event_cold_storage",
+        "app.tasks.dashboard_stats",
     ],
 )
 
@@ -42,6 +44,10 @@ celery_app.conf.update(
         "archive-asset-events-daily": {
             "task": "app.tasks.asset_event_cold_storage.archive_old_events",
             "schedule": crontab(hour=3, minute=0),  # 03:00 UTC
+        },
+        "compute-dashboard-stats": {
+            "task": "app.tasks.dashboard_stats.compute_dashboard_stats",
+            "schedule": timedelta(seconds=120),  # every 2 minutes
         },
     },
 )
