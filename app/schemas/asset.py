@@ -12,6 +12,7 @@ class AssetBase(BaseModel):
     mobility_type: str = "personal"
     legal_entity_id: uuid.UUID | None = None
     location_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
     configuration_id: uuid.UUID | None = None
     vendor_id: uuid.UUID | None = None
     classification_level_id: uuid.UUID | None = None
@@ -35,6 +36,7 @@ class AssetModify(BaseModel):
     mobility_type: str | None = None
     legal_entity_id: uuid.UUID | None = None
     location_id: uuid.UUID | None = None
+    category_id: uuid.UUID | None = None
     configuration_id: uuid.UUID | None = None
     vendor_id: uuid.UUID | None = None
     classification_level_id: uuid.UUID | None = None

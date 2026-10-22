@@ -12,8 +12,17 @@ venv/
 inverum-claude-context.md
 inverum-context-diff-*.md
 inverum-*.md
+AGENT_CONTEXT.md
+SESSION_CHECKPOINT.md
+frontend/DECISIONS.md
+frontend/inverum-*.md
 inverum-*.zip
 repomix-output.xml
 claude.txt
 *.zip
 docs/
+.pids/
+.codewhale/
+frontend/node_modules/
+frontend/dist/
+frontend/build/

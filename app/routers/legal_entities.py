@@ -21,7 +21,7 @@ def list_legal_entities(
 ):
     query = db.query(LegalEntity).filter(
         LegalEntity.tenant_id == user.tenant_id,
-        LegalEntity.deleted_at == None,
+        LegalEntity.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -38,7 +38,7 @@ def get_legal_entity(
     entity = db.query(LegalEntity).filter(
         LegalEntity.id == legal_entity_id,
         LegalEntity.tenant_id == user.tenant_id,
-        LegalEntity.deleted_at == None,
+        LegalEntity.deleted_at.is_(None),
     ).first()
     if not entity:
         raise HTTPException(status_code=404, detail="Legal entity not found")
@@ -68,7 +68,7 @@ def update_legal_entity(
     entity = db.query(LegalEntity).filter(
         LegalEntity.id == legal_entity_id,
         LegalEntity.tenant_id == user.tenant_id,
-        LegalEntity.deleted_at == None,
+        LegalEntity.deleted_at.is_(None),
     ).first()
     if not entity:
         raise HTTPException(status_code=404, detail="Legal entity not found")
@@ -88,7 +88,7 @@ def delete_legal_entity(
     entity = db.query(LegalEntity).filter(
         LegalEntity.id == legal_entity_id,
         LegalEntity.tenant_id == user.tenant_id,
-        LegalEntity.deleted_at == None,
+        LegalEntity.deleted_at.is_(None),
     ).first()
     if not entity:
         raise HTTPException(status_code=404, detail="Legal entity not found")

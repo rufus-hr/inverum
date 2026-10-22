@@ -23,7 +23,7 @@ def list_schedules(
 ):
     query = db.query(MaintenanceSchedule).filter(
         MaintenanceSchedule.tenant_id == user.tenant_id,
-        MaintenanceSchedule.deleted_at == None,
+        MaintenanceSchedule.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -41,7 +41,7 @@ def get_schedule(
     s = db.query(MaintenanceSchedule).filter(
         MaintenanceSchedule.id == schedule_id,
         MaintenanceSchedule.tenant_id == user.tenant_id,
-        MaintenanceSchedule.deleted_at == None,
+        MaintenanceSchedule.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Maintenance schedule not found")
@@ -71,7 +71,7 @@ def update_schedule(
     s = db.query(MaintenanceSchedule).filter(
         MaintenanceSchedule.id == schedule_id,
         MaintenanceSchedule.tenant_id == user.tenant_id,
-        MaintenanceSchedule.deleted_at == None,
+        MaintenanceSchedule.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Maintenance schedule not found")
@@ -91,7 +91,7 @@ def delete_schedule(
     s = db.query(MaintenanceSchedule).filter(
         MaintenanceSchedule.id == schedule_id,
         MaintenanceSchedule.tenant_id == user.tenant_id,
-        MaintenanceSchedule.deleted_at == None,
+        MaintenanceSchedule.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Maintenance schedule not found")

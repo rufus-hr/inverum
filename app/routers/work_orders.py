@@ -21,7 +21,7 @@ def list_work_orders(
 ):
     query = db.query(WorkOrder).filter(
         WorkOrder.tenant_id == user.tenant_id,
-        WorkOrder.deleted_at == None,
+        WorkOrder.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -37,7 +37,7 @@ def get_work_order(
     db: Session = Depends(get_db),
 ):
     wo = db.query(WorkOrder).filter(
-        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at == None
+        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at.is_(None)
     ).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
@@ -65,7 +65,7 @@ def update_work_order(
     db: Session = Depends(get_db),
 ):
     wo = db.query(WorkOrder).filter(
-        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at == None
+        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at.is_(None)
     ).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
@@ -83,7 +83,7 @@ def delete_work_order(
     db: Session = Depends(get_db),
 ):
     wo = db.query(WorkOrder).filter(
-        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at == None
+        WorkOrder.id == wo_id, WorkOrder.tenant_id == user.tenant_id, WorkOrder.deleted_at.is_(None)
     ).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")

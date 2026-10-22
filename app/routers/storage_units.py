@@ -37,7 +37,7 @@ def list_storage_units(
 ):
     query = db.query(StorageUnit).filter(
         StorageUnit.tenant_id == user.tenant_id,
-        StorageUnit.deleted_at == None,
+        StorageUnit.deleted_at.is_(None),
     )
     if location_id:
         query = query.filter(StorageUnit.location_id == location_id)
@@ -118,19 +118,19 @@ def get_storage_unit_contents(
     children = db.query(StorageUnit).filter(
         StorageUnit.parent_storage_unit_id == su_id,
         StorageUnit.tenant_id == user.tenant_id,
-        StorageUnit.deleted_at == None,
+        StorageUnit.deleted_at.is_(None),
     ).all()
 
     assets = db.query(Asset).filter(
         Asset.storage_unit_id == su_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).all()
 
     boxes = db.query(Box).filter(
         Box.storage_unit_id == su_id,
         Box.tenant_id == user.tenant_id,
-        Box.deleted_at == None,
+        Box.deleted_at.is_(None),
     ).all()
 
     # Security violations: asset.security_level > storage_unit.security_level
@@ -221,7 +221,7 @@ def place_asset(
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -229,7 +229,7 @@ def place_asset(
     su = db.query(StorageUnit).filter(
         StorageUnit.id == data.storage_unit_id,
         StorageUnit.tenant_id == user.tenant_id,
-        StorageUnit.deleted_at == None,
+        StorageUnit.deleted_at.is_(None),
     ).first()
     if not su:
         raise HTTPException(status_code=404, detail="Storage unit not found")
@@ -277,7 +277,7 @@ def place_asset_in_location(
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -302,7 +302,7 @@ def get_asset_location(
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -361,7 +361,7 @@ def place_box(
     box = db.query(Box).filter(
         Box.id == box_id,
         Box.tenant_id == user.tenant_id,
-        Box.deleted_at == None,
+        Box.deleted_at.is_(None),
     ).first()
     if not box:
         raise HTTPException(status_code=404, detail="Box not found")
@@ -369,7 +369,7 @@ def place_box(
     su = db.query(StorageUnit).filter(
         StorageUnit.id == data.storage_unit_id,
         StorageUnit.tenant_id == user.tenant_id,
-        StorageUnit.deleted_at == None,
+        StorageUnit.deleted_at.is_(None),
     ).first()
     if not su:
         raise HTTPException(status_code=404, detail="Storage unit not found")
@@ -389,7 +389,7 @@ def _get_or_404(su_id: uuid.UUID, tenant_id: uuid.UUID, db: Session) -> StorageU
     su = db.query(StorageUnit).filter(
         StorageUnit.id == su_id,
         StorageUnit.tenant_id == tenant_id,
-        StorageUnit.deleted_at == None,
+        StorageUnit.deleted_at.is_(None),
     ).first()
     if not su:
         raise HTTPException(status_code=404, detail="Storage unit not found")

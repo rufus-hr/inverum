@@ -25,7 +25,7 @@ def list_users(
 ):
     query = db.query(User).filter(
         User.tenant_id == user.tenant_id,
-        User.deleted_at == None,
+        User.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -42,7 +42,7 @@ def get_user(
     u = db.query(User).filter(
         User.id == user_id,
         User.tenant_id == user.tenant_id,
-        User.deleted_at == None,
+        User.deleted_at.is_(None),
     ).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
@@ -59,7 +59,7 @@ def update_user(
     u = db.query(User).filter(
         User.id == user_id,
         User.tenant_id == user.tenant_id,
-        User.deleted_at == None,
+        User.deleted_at.is_(None),
     ).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")
@@ -79,7 +79,7 @@ def delete_user(
     u = db.query(User).filter(
         User.id == user_id,
         User.tenant_id == user.tenant_id,
-        User.deleted_at == None,
+        User.deleted_at.is_(None),
     ).first()
     if not u:
         raise HTTPException(status_code=404, detail="User not found")

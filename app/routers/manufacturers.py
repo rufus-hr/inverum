@@ -19,7 +19,7 @@ def list_manufacturers(
     user: User = Depends(require_permission("manufacturer:read")),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Manufacturer).filter(Manufacturer.deleted_at == None)
+    query = db.query(Manufacturer).filter(Manufacturer.deleted_at.is_(None))
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
     pages = (total + pagination.limit - 1) // pagination.limit
@@ -34,7 +34,7 @@ def get_manufacturer(
 ):
     m = db.query(Manufacturer).filter(
         Manufacturer.id == manufacturer_id,
-        Manufacturer.deleted_at == None,
+        Manufacturer.deleted_at.is_(None),
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Manufacturer not found")
@@ -63,7 +63,7 @@ def update_manufacturer(
 ):
     m = db.query(Manufacturer).filter(
         Manufacturer.id == manufacturer_id,
-        Manufacturer.deleted_at == None,
+        Manufacturer.deleted_at.is_(None),
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Manufacturer not found")
@@ -82,7 +82,7 @@ def delete_manufacturer(
 ):
     m = db.query(Manufacturer).filter(
         Manufacturer.id == manufacturer_id,
-        Manufacturer.deleted_at == None,
+        Manufacturer.deleted_at.is_(None),
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Manufacturer not found")

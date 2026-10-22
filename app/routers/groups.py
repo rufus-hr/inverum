@@ -21,7 +21,7 @@ def list_groups(
 ):
     query = db.query(Group).filter(
         Group.tenant_id == user.tenant_id,
-        Group.deleted_at == None,
+        Group.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -38,7 +38,7 @@ def get_group(
     g = db.query(Group).filter(
         Group.id == group_id,
         Group.tenant_id == user.tenant_id,
-        Group.deleted_at == None,
+        Group.deleted_at.is_(None),
     ).first()
     if not g:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -68,7 +68,7 @@ def update_group(
     g = db.query(Group).filter(
         Group.id == group_id,
         Group.tenant_id == user.tenant_id,
-        Group.deleted_at == None,
+        Group.deleted_at.is_(None),
     ).first()
     if not g:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -88,7 +88,7 @@ def delete_group(
     g = db.query(Group).filter(
         Group.id == group_id,
         Group.tenant_id == user.tenant_id,
-        Group.deleted_at == None,
+        Group.deleted_at.is_(None),
     ).first()
     if not g:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -106,7 +106,7 @@ def add_member(
     g = db.query(Group).filter(
         Group.id == group_id,
         Group.tenant_id == user.tenant_id,
-        Group.deleted_at == None,
+        Group.deleted_at.is_(None),
     ).first()
     if not g:
         raise HTTPException(status_code=404, detail="Group not found")

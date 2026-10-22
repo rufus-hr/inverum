@@ -27,7 +27,7 @@ def list_vendors(
 ):
     query = db.query(Vendor).filter(
         Vendor.tenant_id == user.tenant_id,
-        Vendor.deleted_at == None,
+        Vendor.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -45,7 +45,7 @@ def get_vendor(
     v = db.query(Vendor).filter(
         Vendor.id == vendor_id,
         Vendor.tenant_id == user.tenant_id,
-        Vendor.deleted_at == None,
+        Vendor.deleted_at.is_(None),
     ).first()
     if not v:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -75,7 +75,7 @@ def update_vendor(
     v = db.query(Vendor).filter(
         Vendor.id == vendor_id,
         Vendor.tenant_id == user.tenant_id,
-        Vendor.deleted_at == None,
+        Vendor.deleted_at.is_(None),
     ).first()
     if not v:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -95,7 +95,7 @@ def delete_vendor(
     v = db.query(Vendor).filter(
         Vendor.id == vendor_id,
         Vendor.tenant_id == user.tenant_id,
-        Vendor.deleted_at == None,
+        Vendor.deleted_at.is_(None),
     ).first()
     if not v:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -115,7 +115,7 @@ def list_contacts(
     return db.query(VendorContact).filter(
         VendorContact.vendor_id == vendor_id,
         VendorContact.tenant_id == user.tenant_id,
-        VendorContact.deleted_at == None,
+        VendorContact.deleted_at.is_(None),
     ).all()
 
 
@@ -133,7 +133,7 @@ def add_contact(
             VendorContact.vendor_id == vendor_id,
             VendorContact.tenant_id == user.tenant_id,
             VendorContact.is_primary == True,
-            VendorContact.deleted_at == None,
+            VendorContact.deleted_at.is_(None),
         ).update({"is_primary": False})
     c = VendorContact(**data.model_dump(), vendor_id=vendor_id, tenant_id=user.tenant_id)
     db.add(c)
@@ -156,7 +156,7 @@ def update_contact(
             VendorContact.vendor_id == vendor_id,
             VendorContact.tenant_id == user.tenant_id,
             VendorContact.is_primary == True,
-            VendorContact.deleted_at == None,
+            VendorContact.deleted_at.is_(None),
             VendorContact.id != contact_id,
         ).update({"is_primary": False})
     for field, value in data.model_dump(exclude_unset=True).items():
@@ -191,7 +191,7 @@ def vendor_stats(
     assets = db.query(Asset).filter(
         Asset.purchased_from_vendor_id == vendor_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).all()
 
     total_value = sum(
@@ -207,7 +207,7 @@ def vendor_stats(
         VendorContract.vendor_id == vendor_id,
         VendorContract.tenant_id == user.tenant_id,
         VendorContract.is_active == True,
-        VendorContract.deleted_at == None,
+        VendorContract.deleted_at.is_(None),
     ).all()
 
     active_contracts = len(contracts)
@@ -221,7 +221,7 @@ def vendor_stats(
     work_orders = db.query(WorkOrder).filter(
         WorkOrder.asset_id.in_(asset_ids),
         WorkOrder.tenant_id == user.tenant_id,
-        WorkOrder.deleted_at == None,
+        WorkOrder.deleted_at.is_(None),
     ).all() if asset_ids else []
 
     wo_open = sum(1 for wo in work_orders if wo.status in ("open", "in_progress"))
@@ -251,7 +251,7 @@ def vendor_stats(
 
 def _get_vendor_or_404(vendor_id: uuid.UUID, tenant_id: uuid.UUID, db: Session) -> Vendor:
     v = db.query(Vendor).filter(
-        Vendor.id == vendor_id, Vendor.tenant_id == tenant_id, Vendor.deleted_at == None
+        Vendor.id == vendor_id, Vendor.tenant_id == tenant_id, Vendor.deleted_at.is_(None)
     ).first()
     if not v:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -263,7 +263,7 @@ def _get_contact_or_404(contact_id, vendor_id, tenant_id, db) -> VendorContact:
         VendorContact.id == contact_id,
         VendorContact.vendor_id == vendor_id,
         VendorContact.tenant_id == tenant_id,
-        VendorContact.deleted_at == None,
+        VendorContact.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact not found")

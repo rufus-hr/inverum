@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from sqlalchemy import String, DateTime, ForeignKey, Index, Text, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
@@ -7,10 +8,12 @@ from app.core.database import Base
 
 class Supply(Base):
     """
-    Konsolidirani model za sve potrošne/zalihe stavke.
-    supply_type="consumable" → toner, baterije, miševi, kablovi, punjači (troše se)
+    Kataloška definicija potrošne/zalihe stavke (SKU/product definition).
+    Nema lokaciju — to je na StockItem/Consumable/Accessory instancama.
+
+    supply_type="consumable" → toner, baterije, žarulje (troše se, ne vraćaju se)
     supply_type="stock_item" → SFP moduli, rezervni dijelovi, HDD za zamjenu
-    Accessories su uklonjeni kao zasebni koncept — sve je Asset ili Supply.
+    supply_type="accessory"  → punjači, miševi, tipkovnice (vraćaju se u stock)
     """
     __tablename__ = "supplies"
     __table_args__ = (
@@ -23,28 +26,31 @@ class Supply(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    part_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     supply_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    # "consumable" | "stock_item"
+    # "consumable" | "stock_item" | "accessory"
 
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # toner | battery | cable | sfp | mouse | keyboard | charger | adapter | spare_part | other
-    # Iz reference_data — tenant može dodati vlastite
+    # toner | battery | cable | sfp | mouse | keyboard | charger | spare_part | other
 
     unit: Mapped[str] = mapped_column(String(20), nullable=False, default="kom")
     # "kom" | "m" | "l" | "pak" | "kg"
 
     compatible_with: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Slobodan tekst — "Cisco Catalyst serija", "Dell PowerEdge R7xx"
-    # Informativno, Inverum ne validira kompatibilnost
+    # Strukturirana kompatibilnost: asset_supply_requirements tablica
 
-    unit_price: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
-    # Za CAPEX Intelligence forecast: reorder_quantity × unit_price × (12/reorder_period_months)
 
     vendor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("vendors.id"), nullable=True)
+    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("manufacturers.id"), nullable=True
+    )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

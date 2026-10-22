@@ -10,12 +10,10 @@ from app.core.database import Base
 class Asset(Base):
     __tablename__ = "assets"
     __revertable__ = True
-    __table_args__ = (
-        CheckConstraint(
-            "num_nonnulls(location_id, storage_unit_id, box_id) = 1",
-            name="chk_asset_single_parent",
-        ),
-    )
+    # location_id, storage_unit_id, box_id are all maintained by triggers.
+    # location_id = resolved final location (room/area), always set except in_transit.
+    # storage_unit_id = intermediate container (cabinet/shelf), set if applicable.
+    # box_id = immediate box container, set if in a box.
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

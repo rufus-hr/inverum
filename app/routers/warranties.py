@@ -21,7 +21,7 @@ def list_warranties(
 ):
     query = db.query(Warranty).filter(
         Warranty.tenant_id == user.tenant_id,
-        Warranty.deleted_at == None,
+        Warranty.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -38,7 +38,7 @@ def get_warranty(
     w = db.query(Warranty).filter(
         Warranty.id == warranty_id,
         Warranty.tenant_id == user.tenant_id,
-        Warranty.deleted_at == None,
+        Warranty.deleted_at.is_(None),
     ).first()
     if not w:
         raise HTTPException(status_code=404, detail="Warranty not found")
@@ -68,7 +68,7 @@ def update_warranty(
     w = db.query(Warranty).filter(
         Warranty.id == warranty_id,
         Warranty.tenant_id == user.tenant_id,
-        Warranty.deleted_at == None,
+        Warranty.deleted_at.is_(None),
     ).first()
     if not w:
         raise HTTPException(status_code=404, detail="Warranty not found")
@@ -88,7 +88,7 @@ def delete_warranty(
     w = db.query(Warranty).filter(
         Warranty.id == warranty_id,
         Warranty.tenant_id == user.tenant_id,
-        Warranty.deleted_at == None,
+        Warranty.deleted_at.is_(None),
     ).first()
     if not w:
         raise HTTPException(status_code=404, detail="Warranty not found")

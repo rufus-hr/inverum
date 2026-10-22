@@ -23,7 +23,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     tenant = db.query(Tenant).filter(
         Tenant.slug == data.tenant_slug,
-        Tenant.deleted_at == None,
+        Tenant.deleted_at.is_(None),
         Tenant.is_active == True
     ).first()
     if not tenant:
@@ -33,7 +33,7 @@ def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
         UserIdentity.provider == data.provider,
         UserIdentity.provider_id == data.provider_id,
         UserIdentity.tenant_id == tenant.id,
-        UserIdentity.deleted_at == None
+        UserIdentity.deleted_at.is_(None)
     ).first()
 
     if not identity:
@@ -110,7 +110,7 @@ def logout(request: Request, user: User = Depends(get_current_user), db: Session
     return Response(status_code=204)
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(data: RefreshRequest):
+def refresh(data: RefreshRequest, db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(data.refresh_token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.InvalidTokenError:
@@ -121,16 +121,35 @@ def refresh(data: RefreshRequest):
 
     user_id = payload.get("sub")
     tenant_id = payload.get("tenant_id")
+    if not user_id or not tenant_id:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if client is None:
+        raise HTTPException(status_code=503, detail="Session service unavailable")
 
     stored_token = client.get(f"refresh:{user_id}")
     if not stored_token or stored_token != data.refresh_token:
         raise HTTPException(status_code=401, detail="Session expired")
 
+    tenant = db.query(Tenant).filter(
+        Tenant.id == tenant_id,
+        Tenant.deleted_at.is_(None),
+        Tenant.is_active.is_(True),
+    ).first()
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Tenant inactive or not found")
+
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == tenant_id,
+        User.deleted_at.is_(None),
+        User.is_active.is_(True),
+    ).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User inactive or not found")
+
     access_token = create_access_token(user_id, tenant_id)
     new_refresh_token = create_refresh_token(user_id, tenant_id)
-    
-    if client is None:
-        raise HTTPException(status_code=503, detail="Session service unavailable")
     client.setex(f"refresh:{user_id}", 60 * 60 * 24 * 7, new_refresh_token)
 
     return TokenResponse(

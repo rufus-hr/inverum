@@ -8,7 +8,7 @@
 set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-FRONTEND="$ROOT/../inverum-frontend"
+FRONTEND="$ROOT/frontend"
 VENV="$ROOT/venv"
 PID_DIR="$ROOT/.pids"
 mkdir -p "$PID_DIR"
@@ -36,8 +36,8 @@ kill_pid() {
 start_all() {
     source "$VENV/bin/activate"
 
-    info "Migrations..."
-    alembic upgrade head
+    info "Schema check..."
+    python "$ROOT/scripts/db_apply.py" --ensure-schema || true
 
     info "Backend :8000..."
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &

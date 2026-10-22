@@ -29,7 +29,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(
         User.id == user_id,
         User.tenant_id == tenant_id,
-        User.deleted_at == None
+        User.deleted_at.is_(None)
     ).first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")

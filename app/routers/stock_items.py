@@ -21,7 +21,7 @@ def list_stock_items(
 ):
     query = db.query(StockItem).filter(
         StockItem.tenant_id == user.tenant_id,
-        StockItem.deleted_at == None,
+        StockItem.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -38,7 +38,7 @@ def get_stock_item(
     s = db.query(StockItem).filter(
         StockItem.id == stock_item_id,
         StockItem.tenant_id == user.tenant_id,
-        StockItem.deleted_at == None,
+        StockItem.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Stock item not found")
@@ -68,7 +68,7 @@ def update_stock_item(
     s = db.query(StockItem).filter(
         StockItem.id == stock_item_id,
         StockItem.tenant_id == user.tenant_id,
-        StockItem.deleted_at == None,
+        StockItem.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Stock item not found")
@@ -88,7 +88,7 @@ def delete_stock_item(
     s = db.query(StockItem).filter(
         StockItem.id == stock_item_id,
         StockItem.tenant_id == user.tenant_id,
-        StockItem.deleted_at == None,
+        StockItem.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="Stock item not found")

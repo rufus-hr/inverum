@@ -54,7 +54,7 @@ def trigger_event(
             ChecklistTemplate.tenant_id == asset.tenant_id,
             ChecklistTemplate.trigger_event == event,
             ChecklistTemplate.is_active == True,
-            ChecklistTemplate.deleted_at == None,
+            ChecklistTemplate.deleted_at.is_(None),
         )
         .all()
     )
@@ -106,7 +106,7 @@ def _should_create(
         ChecklistCompletion.template_id == template.id,
         ChecklistCompletion.triggered_by_user_id == triggered_by_user_id,
         ChecklistCompletion.status.in_(["submitted", "confirmed"]),
-        ChecklistCompletion.deleted_at == None,
+        ChecklistCompletion.deleted_at.is_(None),
     )
 
     if template.frequency == "per_employee_yearly":
@@ -195,7 +195,7 @@ def uncheck_item(
         .filter(
             ChecklistItem.template_id == completion.template_id,
             ChecklistItem.depends_on_item_id == item_id,
-            ChecklistItem.deleted_at == None,
+            ChecklistItem.deleted_at.is_(None),
         )
         .all()
     )
@@ -218,7 +218,7 @@ def submit_completion(
             ChecklistItem.template_id == completion.template_id,
             ChecklistItem.is_blocking == True,
             ChecklistItem.is_active == True,
-            ChecklistItem.deleted_at == None,
+            ChecklistItem.deleted_at.is_(None),
         )
         .all()
     )
@@ -280,7 +280,7 @@ def cancel_completion(
             ChecklistCompletion.triggered_by == completion.triggered_by,
             ChecklistCompletion.status == "open",
             ChecklistCompletion.id != completion.id,
-            ChecklistCompletion.deleted_at == None,
+            ChecklistCompletion.deleted_at.is_(None),
         )
         .first()
     )
@@ -300,7 +300,7 @@ def _check_all_closed(db: Session, completion: ChecklistCompletion) -> bool:
             ChecklistCompletion.triggered_by == completion.triggered_by,
             ChecklistCompletion.status == "open",
             ChecklistCompletion.id != completion.id,
-            ChecklistCompletion.deleted_at == None,
+            ChecklistCompletion.deleted_at.is_(None),
         )
         .first()
     )

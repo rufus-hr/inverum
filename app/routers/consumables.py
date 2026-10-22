@@ -21,7 +21,7 @@ def list_consumables(
 ):
     query = db.query(Consumable).filter(
         Consumable.tenant_id == user.tenant_id,
-        Consumable.deleted_at == None,
+        Consumable.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -39,7 +39,7 @@ def get_consumable(
     c = db.query(Consumable).filter(
         Consumable.id == consumable_id,
         Consumable.tenant_id == user.tenant_id,
-        Consumable.deleted_at == None,
+        Consumable.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Consumable not found")
@@ -69,7 +69,7 @@ def update_consumable(
     c = db.query(Consumable).filter(
         Consumable.id == consumable_id,
         Consumable.tenant_id == user.tenant_id,
-        Consumable.deleted_at == None,
+        Consumable.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Consumable not found")
@@ -89,7 +89,7 @@ def delete_consumable(
     c = db.query(Consumable).filter(
         Consumable.id == consumable_id,
         Consumable.tenant_id == user.tenant_id,
-        Consumable.deleted_at == None,
+        Consumable.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Consumable not found")

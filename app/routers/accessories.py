@@ -21,7 +21,7 @@ def list_accessories(
 ):
     query = db.query(Accessory).filter(
         Accessory.tenant_id == user.tenant_id,
-        Accessory.deleted_at == None,
+        Accessory.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -39,7 +39,7 @@ def get_accessory(
     a = db.query(Accessory).filter(
         Accessory.id == accessory_id,
         Accessory.tenant_id == user.tenant_id,
-        Accessory.deleted_at == None,
+        Accessory.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Accessory not found")
@@ -69,7 +69,7 @@ def update_accessory(
     a = db.query(Accessory).filter(
         Accessory.id == accessory_id,
         Accessory.tenant_id == user.tenant_id,
-        Accessory.deleted_at == None,
+        Accessory.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Accessory not found")
@@ -89,7 +89,7 @@ def delete_accessory(
     a = db.query(Accessory).filter(
         Accessory.id == accessory_id,
         Accessory.tenant_id == user.tenant_id,
-        Accessory.deleted_at == None,
+        Accessory.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Accessory not found")

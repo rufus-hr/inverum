@@ -21,7 +21,7 @@ def archive_old_events():
             .filter(
                 Asset.status.in_(["retired", "scrapped", "disposed"]),
                 Asset.updated_at < cutoff,
-                Asset.deleted_at == None,
+                Asset.deleted_at.is_(None),
             )
             .subquery()
         )

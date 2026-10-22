@@ -76,7 +76,7 @@ def detect_conflict(
 
         query = db.query(model).filter(
             model.tenant_id == tenant_id,
-            model.deleted_at == None,
+            model.deleted_at.is_(None),
             getattr(model, field) == value,
         )
 

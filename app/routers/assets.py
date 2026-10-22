@@ -22,7 +22,7 @@ def list_assets(
 ):
     query = db.query(Asset).filter(
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     )
     items, next_cursor = apply_cursor_pagination(query, Asset, pagination)
     return CursorPagedResponse(items=items, next_cursor=next_cursor, limit=pagination.limit)                                                                                                                                                         
@@ -38,7 +38,7 @@ def get_asset(
     a = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -68,7 +68,7 @@ def update_asset(
     a = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -88,7 +88,7 @@ def delete_asset(
     a = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Asset not found")

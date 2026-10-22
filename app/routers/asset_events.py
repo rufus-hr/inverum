@@ -23,7 +23,7 @@ def list_asset_events(
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")
@@ -46,7 +46,7 @@ def create_asset_event(
     asset = db.query(Asset).filter(
         Asset.id == asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404, detail="Asset not found")

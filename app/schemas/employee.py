@@ -21,6 +21,9 @@ class EmployeeBase(BaseModel):
     legal_entity_id: uuid.UUID | None = None
     manager_id: uuid.UUID | None = None
     default_location_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
+    pebcak_score: int = 0
+    internal_tags: list | None = None
 
 
 class EmployeeCreate(EmployeeBase):
@@ -45,6 +48,9 @@ class EmployeeModify(BaseModel):
     legal_entity_id: uuid.UUID | None = None
     manager_id: uuid.UUID | None = None
     default_location_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
+    pebcak_score: int | None = None
+    internal_tags: list | None = None
 
 
 class EmployeeResponse(EmployeeBase):

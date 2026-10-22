@@ -18,6 +18,9 @@ class DocumentTemplate(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     template_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    # "sticker" | "handover" | "return" | "work_order" | "shipping_manifest" | "audit_report"
+    engine: Mapped[str] = mapped_column(String(20), default="typst", nullable=False)
+    # "svg" (for stickers/labels) | "typst" (.typ) | "html" (HTML+CSS via WeasyPrint)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     requires_signature: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

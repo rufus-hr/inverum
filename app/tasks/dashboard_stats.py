@@ -56,13 +56,13 @@ def _compute_for_tenant(db: Session, tenant_id) -> dict:
 
     total_assets = (
         db.query(func.count(Asset.id))
-        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at == None)
+        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at.is_(None))
         .scalar()
     ) or 0
 
     status_rows = (
         db.query(Asset.status, func.count(Asset.id))
-        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at == None)
+        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at.is_(None))
         .group_by(Asset.status)
         .all()
     )
@@ -71,7 +71,7 @@ def _compute_for_tenant(db: Session, tenant_id) -> dict:
     type_rows = (
         db.query(AssetCategory.name, func.count(Asset.id))
         .join(Asset, Asset.category_id == AssetCategory.id)
-        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at == None)
+        .filter(Asset.tenant_id == tenant_id, Asset.deleted_at.is_(None))
         .group_by(AssetCategory.name)
         .all()
     )
@@ -81,7 +81,7 @@ def _compute_for_tenant(db: Session, tenant_id) -> dict:
         db.query(func.count(Asset.id))
         .filter(
             Asset.tenant_id == tenant_id,
-            Asset.deleted_at == None,
+            Asset.deleted_at.is_(None),
             Asset.category_id == None,
         )
         .scalar()

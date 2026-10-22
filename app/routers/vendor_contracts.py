@@ -21,7 +21,7 @@ def list_vendor_contracts(
 ):
     query = db.query(VendorContract).filter(
         VendorContract.tenant_id == user.tenant_id,
-        VendorContract.deleted_at == None,
+        VendorContract.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -38,7 +38,7 @@ def get_vendor_contract(
     c = db.query(VendorContract).filter(
         VendorContract.id == contract_id,
         VendorContract.tenant_id == user.tenant_id,
-        VendorContract.deleted_at == None,
+        VendorContract.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Vendor contract not found")
@@ -68,7 +68,7 @@ def update_vendor_contract(
     c = db.query(VendorContract).filter(
         VendorContract.id == contract_id,
         VendorContract.tenant_id == user.tenant_id,
-        VendorContract.deleted_at == None,
+        VendorContract.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Vendor contract not found")
@@ -88,7 +88,7 @@ def delete_vendor_contract(
     c = db.query(VendorContract).filter(
         VendorContract.id == contract_id,
         VendorContract.tenant_id == user.tenant_id,
-        VendorContract.deleted_at == None,
+        VendorContract.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404, detail="Vendor contract not found")

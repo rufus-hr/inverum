@@ -135,7 +135,7 @@ def list_templates(
         raise HTTPException(status_code=403)
     q = db.query(ChecklistTemplate).filter(
         ChecklistTemplate.tenant_id == user.tenant_id,
-        ChecklistTemplate.deleted_at == None,
+        ChecklistTemplate.deleted_at.is_(None),
     )
     if trigger_event:
         q = q.filter(ChecklistTemplate.trigger_event == trigger_event)
@@ -268,7 +268,7 @@ def list_completions(
         raise HTTPException(status_code=403)
     q = db.query(ChecklistCompletion).filter(
         ChecklistCompletion.tenant_id == user.tenant_id,
-        ChecklistCompletion.deleted_at == None,
+        ChecklistCompletion.deleted_at.is_(None),
     )
     if asset_id:
         q = q.filter(ChecklistCompletion.asset_id == asset_id)
@@ -404,7 +404,7 @@ def manual_trigger(
     asset = db.query(Asset).filter(
         Asset.id == body.asset_id,
         Asset.tenant_id == user.tenant_id,
-        Asset.deleted_at == None,
+        Asset.deleted_at.is_(None),
     ).first()
     if not asset:
         raise HTTPException(status_code=404)
@@ -430,7 +430,7 @@ def _get_template(db: Session, template_id: uuid.UUID, tenant_id: uuid.UUID) -> 
     t = db.query(ChecklistTemplate).filter(
         ChecklistTemplate.id == template_id,
         ChecklistTemplate.tenant_id == tenant_id,
-        ChecklistTemplate.deleted_at == None,
+        ChecklistTemplate.deleted_at.is_(None),
     ).first()
     if not t:
         raise HTTPException(status_code=404)
@@ -441,7 +441,7 @@ def _get_item(db: Session, item_id: uuid.UUID, tenant_id: uuid.UUID) -> Checklis
     item = db.query(ChecklistItem).filter(
         ChecklistItem.id == item_id,
         ChecklistItem.tenant_id == tenant_id,
-        ChecklistItem.deleted_at == None,
+        ChecklistItem.deleted_at.is_(None),
     ).first()
     if not item:
         raise HTTPException(status_code=404)
@@ -452,7 +452,7 @@ def _get_completion(db: Session, completion_id: uuid.UUID, tenant_id: uuid.UUID)
     c = db.query(ChecklistCompletion).filter(
         ChecklistCompletion.id == completion_id,
         ChecklistCompletion.tenant_id == tenant_id,
-        ChecklistCompletion.deleted_at == None,
+        ChecklistCompletion.deleted_at.is_(None),
     ).first()
     if not c:
         raise HTTPException(status_code=404)

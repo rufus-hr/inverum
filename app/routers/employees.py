@@ -22,7 +22,7 @@ def list_employees(
 ):
     query = db.query(Employee).filter(
         Employee.tenant_id == user.tenant_id,
-        Employee.deleted_at == None,
+        Employee.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -47,7 +47,7 @@ def get_employee(
     e = db.query(Employee).filter(
         Employee.id == employee_id,
         Employee.tenant_id == user.tenant_id,
-        Employee.deleted_at == None,
+        Employee.deleted_at.is_(None),
     ).first()
     if not e:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -77,7 +77,7 @@ def update_employee(
     e = db.query(Employee).filter(
         Employee.id == employee_id,
         Employee.tenant_id == user.tenant_id,
-        Employee.deleted_at == None,
+        Employee.deleted_at.is_(None),
     ).first()
     if not e:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -97,7 +97,7 @@ def delete_employee(
     e = db.query(Employee).filter(
         Employee.id == employee_id,
         Employee.tenant_id == user.tenant_id,
-        Employee.deleted_at == None,
+        Employee.deleted_at.is_(None),
     ).first()
     if not e:
         raise HTTPException(status_code=404, detail="Employee not found")

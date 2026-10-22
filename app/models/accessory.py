@@ -1,37 +1,41 @@
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, Text, Numeric
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
 class Accessory(Base):
     """
-    Accessories: punjači, miševi, tipkovnice, torbe, docking stanice.
+    Fizička instanca supply-ja koji se može vratiti u stock (punjači, miševi, tipkovnice, docking).
+    Catalog metadata (name, part_number, unit, price) živi u Supply.
+    supply_type mora biti "accessory".
     Mogu biti linked na asset ili na korisnika.
-    Mogu se vraćati u stock (za razliku od consumables).
     Kad current_quantity < minimum_quantity → Event Bus: accessory_below_minimum
     """
     __tablename__ = "accessories"
+    __table_args__ = (
+        Index("idx_accessories_tenant", "tenant_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_accessories_supply", "supply_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_accessories_location", "location_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_accessories_box", "box_id", postgresql_where="deleted_at IS NULL"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
-    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("manufacturers.id"), nullable=True
-    )
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    part_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    supply_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("supplies.id"), nullable=False)
+
+    # Točno jedan od ova tri (gdje se item fizički nalazi):
+    location_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    storage_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("storage_units.id"), nullable=True
+    )
+    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
 
     current_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     minimum_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
-    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
-
-    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
     linked_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("assets.id"), nullable=True
     )
@@ -54,4 +58,4 @@ class Accessory(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Accessory {self.name}: {self.current_quantity}>"
+        return f"<Accessory supply:{self.supply_id} qty:{self.current_quantity}>"

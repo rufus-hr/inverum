@@ -630,7 +630,7 @@ def force_close(
     return JobStatusResponse(
         job_id = job.id,
         status = job.status,
-        message=f"Import forced to quit by {user.name}.",
+        message=f"Import forced to quit by {user.display_name}.",
     )
     
     

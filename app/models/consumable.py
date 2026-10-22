@@ -1,38 +1,41 @@
 import uuid
 from datetime import datetime, timezone
-from decimal import Decimal
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Integer, Text, Numeric
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text, Index
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
 class Consumable(Base):
     """
-    Consumables: toner, baterije, žarulje, filteri — troše se, ne vraćaju se.
+    Fizička instanca supply-ja koji se troši i ne vraća (toner, baterije, žarulje, filteri).
+    Catalog metadata (name, part_number, unit, price) živi u Supply.
+    supply_type mora biti "consumable".
     linked_asset_id: npr. toner → printer koji ga koristi.
     Kad current_quantity < minimum_quantity → Event Bus: consumable_below_minimum
     """
     __tablename__ = "consumables"
+    __table_args__ = (
+        Index("idx_consumables_tenant", "tenant_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_consumables_supply", "supply_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_consumables_location", "location_id", postgresql_where="deleted_at IS NULL"),
+        Index("idx_consumables_box", "box_id", postgresql_where="deleted_at IS NULL"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid7)
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
-    location_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("locations.id"), nullable=False)
-    manufacturer_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("manufacturers.id"), nullable=True
-    )
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    part_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    unit: Mapped[str] = mapped_column(String(20), nullable=False, default="pcs")
-    # "pcs" | "box" | "roll" | "liter"
+    supply_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("supplies.id"), nullable=False)
+
+    # Točno jedan od ova tri (gdje se item fizički nalazi):
+    location_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
+    storage_unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("storage_units.id"), nullable=True
+    )
+    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
 
     current_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     minimum_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
-    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
-
-    box_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("boxes.id"), nullable=True)
     linked_asset_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("assets.id"), nullable=True
     )
@@ -53,4 +56,4 @@ class Consumable(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
-        return f"<Consumable {self.name}: {self.current_quantity}{self.unit}>"
+        return f"<Consumable supply:{self.supply_id} qty:{self.current_quantity}>"

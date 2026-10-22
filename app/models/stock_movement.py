@@ -27,6 +27,11 @@ class StockMovement(Base):
 
     supply_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("supplies.id"), nullable=False)
 
+    # Koja konkretna instanca je pogođena (stock_item | consumable | accessory):
+    entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    # NULL samo za legacy/migrirane zapise. Svi novi moraju imati entity_type+entity_id.
+
     # Točno jedan od ova tri (gdje se movement dogodio):
     location_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     storage_unit_id: Mapped[uuid.UUID | None] = mapped_column(

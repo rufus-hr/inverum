@@ -20,7 +20,7 @@ def list_organizations(
 ):
     query = db.query(Organization).filter(
         Organization.tenant_id == user.tenant_id,
-        Organization.deleted_at == None,
+        Organization.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -37,7 +37,7 @@ def get_organization(
     org = db.query(Organization).filter(
         Organization.id == org_id,
         Organization.tenant_id == user.tenant_id,
-        Organization.deleted_at == None,
+        Organization.deleted_at.is_(None),
     ).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -67,7 +67,7 @@ def update_organization(
     org = db.query(Organization).filter(
         Organization.id == org_id,
         Organization.tenant_id == user.tenant_id,
-        Organization.deleted_at == None,
+        Organization.deleted_at.is_(None),
     ).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -87,7 +87,7 @@ def delete_organization(
     org = db.query(Organization).filter(
         Organization.id == org_id,
         Organization.tenant_id == user.tenant_id,
-        Organization.deleted_at == None,
+        Organization.deleted_at.is_(None),
     ).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")

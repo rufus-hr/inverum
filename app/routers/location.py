@@ -20,7 +20,7 @@ def list_locations(
 ):
     query = db.query(Location).filter(
         Location.tenant_id == user.tenant_id,
-        Location.deleted_at == None,
+        Location.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -37,7 +37,7 @@ def get_location(
     loc = db.query(Location).filter(
         Location.id == loc_id,
         Location.tenant_id == user.tenant_id,
-        Location.deleted_at == None,
+        Location.deleted_at.is_(None),
     ).first()
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -67,7 +67,7 @@ def update_location(
     loc = db.query(Location).filter(
         Location.id == loc_id,
         Location.tenant_id == user.tenant_id,
-        Location.deleted_at == None,
+        Location.deleted_at.is_(None),
     ).first()
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -87,7 +87,7 @@ def delete_location(
     loc = db.query(Location).filter(
         Location.id == loc_id,
         Location.tenant_id == user.tenant_id,
-        Location.deleted_at == None,
+        Location.deleted_at.is_(None),
     ).first()
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found")

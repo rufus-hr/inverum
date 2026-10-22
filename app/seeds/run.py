@@ -3,29 +3,112 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+import app.models  # registers all models + configure_mappers()
 from app.models.tenant import Tenant
 from app.models.legal_entity import LegalEntity
 from app.models.organizations import Organization
 from app.models.location import Location
+from app.models.department import Department
 from app.models.user import User, UserIdentity
 from app.models.system_config import SystemConfig
 from app.models.reference_data import ReferenceData
 from app.models.permission import Permission
+from app.models.role import Role
+from app.models.role_permission import RolePermission
+from app.models.group import Group, UserGroup
 from app.seeds.config import ALL_SYSTEM_SEEDS
 
 SYSTEM_PERMISSIONS = [
-    {"code": "import:view", "name": "View Imports", "resource": "import", "action": "view",
-     "description": "View all import jobs for the tenant"},
-    {"code": "import:edit", "name": "Edit Imports", "resource": "import", "action": "edit",
-     "description": "Resolve other users' conflicts and force-close import jobs"},
-    {"code": "department:read", "name": "Read Departments", "resource": "department", "action": "read",
-     "description": "View departments"},
-    {"code": "department:create", "name": "Create Departments", "resource": "department", "action": "create",
-     "description": "Create new departments"},
-    {"code": "department:modify", "name": "Modify Departments", "resource": "department", "action": "modify",
-     "description": "Update existing departments"},
-    {"code": "department:delete", "name": "Delete Departments", "resource": "department", "action": "delete",
-     "description": "Soft-delete departments"},
+    {"code": "import:view", "name": "View Imports", "resource": "import", "action": "view", "description": "View all import jobs for the tenant"},
+    {"code": "import:edit", "name": "Edit Imports", "resource": "import", "action": "edit", "description": "Resolve other users' conflicts and force-close import jobs"},
+    {"code": "department:read", "name": "Read Departments", "resource": "department", "action": "read", "description": "View departments"},
+    {"code": "department:create", "name": "Create Departments", "resource": "department", "action": "create", "description": "Create new departments"},
+    {"code": "department:modify", "name": "Modify Departments", "resource": "department", "action": "modify", "description": "Update existing departments"},
+    {"code": "department:delete", "name": "Delete Departments", "resource": "department", "action": "delete", "description": "Soft-delete departments"},
+    # All router-required permissions
+    {"code": "asset:create", "name": "Create Assets", "resource": "asset", "action": "create", "description": "Create assets"},
+    {"code": "asset:read", "name": "Read Assets", "resource": "asset", "action": "read", "description": "View assets"},
+    {"code": "asset:write", "name": "Write Assets", "resource": "asset", "action": "write", "description": "Create/update assets"},
+    {"code": "asset:modify", "name": "Modify Assets", "resource": "asset", "action": "modify", "description": "Update assets"},
+    {"code": "asset:delete", "name": "Delete Assets", "resource": "asset", "action": "delete", "description": "Delete assets"},
+    {"code": "assets:read", "name": "Read Assets (plural)", "resource": "assets", "action": "read", "description": "View assets"},
+    {"code": "assets:write", "name": "Write Assets (plural)", "resource": "assets", "action": "write", "description": "Write assets"},
+    {"code": "assets:delete", "name": "Delete Assets (plural)", "resource": "assets", "action": "delete", "description": "Delete assets"},
+    {"code": "asset_assignment:create", "name": "Create Assignments", "resource": "asset_assignment", "action": "create", "description": "Assign assets"},
+    {"code": "asset_assignment:read", "name": "Read Assignments", "resource": "asset_assignment", "action": "read", "description": "View assignments"},
+    {"code": "asset_assignment:modify", "name": "Modify Assignments", "resource": "asset_assignment", "action": "modify", "description": "Return assets"},
+    {"code": "audit_log:read", "name": "Read Audit Log", "resource": "audit_log", "action": "read", "description": "View audit log"},
+    {"code": "box:read", "name": "Read Boxes", "resource": "box", "action": "read", "description": "View boxes"},
+    {"code": "box:write", "name": "Write Boxes", "resource": "box", "action": "write", "description": "Create/update boxes"},
+    {"code": "component:read", "name": "Read Components", "resource": "component", "action": "read", "description": "View components"},
+    {"code": "component:write", "name": "Write Components", "resource": "component", "action": "write", "description": "Create/update components"},
+    {"code": "employee:create", "name": "Create Employees", "resource": "employee", "action": "create", "description": "Create employees"},
+    {"code": "employee:read", "name": "Read Employees", "resource": "employee", "action": "read", "description": "View employees"},
+    {"code": "employee:modify", "name": "Modify Employees", "resource": "employee", "action": "modify", "description": "Update employees"},
+    {"code": "employee:delete", "name": "Delete Employees", "resource": "employee", "action": "delete", "description": "Delete employees"},
+    {"code": "group:create", "name": "Create Groups", "resource": "group", "action": "create", "description": "Create groups"},
+    {"code": "group:read", "name": "Read Groups", "resource": "group", "action": "read", "description": "View groups"},
+    {"code": "group:modify", "name": "Modify Groups", "resource": "group", "action": "modify", "description": "Update groups"},
+    {"code": "group:delete", "name": "Delete Groups", "resource": "group", "action": "delete", "description": "Delete groups"},
+    {"code": "integration:manage", "name": "Manage Integrations", "resource": "integration", "action": "manage", "description": "Manage integrations"},
+    {"code": "legal_entity:create", "name": "Create Legal Entities", "resource": "legal_entity", "action": "create", "description": "Create legal entities"},
+    {"code": "legal_entity:read", "name": "Read Legal Entities", "resource": "legal_entity", "action": "read", "description": "View legal entities"},
+    {"code": "legal_entity:modify", "name": "Modify Legal Entities", "resource": "legal_entity", "action": "modify", "description": "Update legal entities"},
+    {"code": "legal_entity:delete", "name": "Delete Legal Entities", "resource": "legal_entity", "action": "delete", "description": "Delete legal entities"},
+    {"code": "location:create", "name": "Create Locations", "resource": "location", "action": "create", "description": "Create locations"},
+    {"code": "location:read", "name": "Read Locations", "resource": "location", "action": "read", "description": "View locations"},
+    {"code": "location:modify", "name": "Modify Locations", "resource": "location", "action": "modify", "description": "Update locations"},
+    {"code": "location:delete", "name": "Delete Locations", "resource": "location", "action": "delete", "description": "Delete locations"},
+    {"code": "manufacturer:create", "name": "Create Manufacturers", "resource": "manufacturer", "action": "create", "description": "Create manufacturers"},
+    {"code": "manufacturer:read", "name": "Read Manufacturers", "resource": "manufacturer", "action": "read", "description": "View manufacturers"},
+    {"code": "manufacturer:modify", "name": "Modify Manufacturers", "resource": "manufacturer", "action": "modify", "description": "Update manufacturers"},
+    {"code": "manufacturer:delete", "name": "Delete Manufacturers", "resource": "manufacturer", "action": "delete", "description": "Delete manufacturers"},
+    {"code": "organization:create", "name": "Create Organizations", "resource": "organization", "action": "create", "description": "Create organizations"},
+    {"code": "organization:read", "name": "Read Organizations", "resource": "organization", "action": "read", "description": "View organizations"},
+    {"code": "organization:modify", "name": "Modify Organizations", "resource": "organization", "action": "modify", "description": "Update organizations"},
+    {"code": "organization:delete", "name": "Delete Organizations", "resource": "organization", "action": "delete", "description": "Delete organizations"},
+    {"code": "permission:create", "name": "Create Permissions", "resource": "permission", "action": "create", "description": "Create permissions"},
+    {"code": "permission:read", "name": "Read Permissions", "resource": "permission", "action": "read", "description": "View permissions"},
+    {"code": "reference_data:create", "name": "Create Reference Data", "resource": "reference_data", "action": "create", "description": "Create reference data"},
+    {"code": "reference_data:read", "name": "Read Reference Data", "resource": "reference_data", "action": "read", "description": "View reference data"},
+    {"code": "reference_data:modify", "name": "Modify Reference Data", "resource": "reference_data", "action": "modify", "description": "Update reference data"},
+    {"code": "reference_data:delete", "name": "Delete Reference Data", "resource": "reference_data", "action": "delete", "description": "Delete reference data"},
+    {"code": "role:create", "name": "Create Roles", "resource": "role", "action": "create", "description": "Create roles"},
+    {"code": "role:read", "name": "Read Roles", "resource": "role", "action": "read", "description": "View roles"},
+    {"code": "role:modify", "name": "Modify Roles", "resource": "role", "action": "modify", "description": "Update roles"},
+    {"code": "stock:read", "name": "Read Stock", "resource": "stock", "action": "read", "description": "View stock"},
+    {"code": "stock:write", "name": "Write Stock", "resource": "stock", "action": "write", "description": "Create/update stock"},
+    {"code": "stock_item:create", "name": "Create Stock Items", "resource": "stock_item", "action": "create", "description": "Create stock items"},
+    {"code": "stock_item:read", "name": "Read Stock Items", "resource": "stock_item", "action": "read", "description": "View stock items"},
+    {"code": "stock_item:modify", "name": "Modify Stock Items", "resource": "stock_item", "action": "modify", "description": "Update stock items"},
+    {"code": "stock_item:delete", "name": "Delete Stock Items", "resource": "stock_item", "action": "delete", "description": "Delete stock items"},
+    {"code": "storage_unit:read", "name": "Read Storage Units", "resource": "storage_unit", "action": "read", "description": "View storage units"},
+    {"code": "storage_unit:write", "name": "Write Storage Units", "resource": "storage_unit", "action": "write", "description": "Create/update storage units"},
+    {"code": "storage_unit:delete", "name": "Delete Storage Units", "resource": "storage_unit", "action": "delete", "description": "Delete storage units"},
+    {"code": "supply:read", "name": "Read Supplies", "resource": "supply", "action": "read", "description": "View supplies"},
+    {"code": "supply:write", "name": "Write Supplies", "resource": "supply", "action": "write", "description": "Create/update supplies"},
+    {"code": "supply:delete", "name": "Delete Supplies", "resource": "supply", "action": "delete", "description": "Delete supplies"},
+    {"code": "tenant:create", "name": "Create Tenants", "resource": "tenant", "action": "create", "description": "Create tenants"},
+    {"code": "tenant:read", "name": "Read Tenants", "resource": "tenant", "action": "read", "description": "View tenants"},
+    {"code": "tenant:settings", "name": "Manage Tenant Settings", "resource": "tenant", "action": "settings", "description": "Manage tenant settings"},
+    {"code": "user:read", "name": "Read Users", "resource": "user", "action": "read", "description": "View users"},
+    {"code": "user:modify", "name": "Modify Users", "resource": "user", "action": "modify", "description": "Update users"},
+    {"code": "user:delete", "name": "Delete Users", "resource": "user", "action": "delete", "description": "Delete users"},
+    {"code": "vendor:read", "name": "Read Vendors", "resource": "vendor", "action": "read", "description": "View vendors"},
+    {"code": "vendor:write", "name": "Write Vendors", "resource": "vendor", "action": "write", "description": "Create/update vendors"},
+    {"code": "vendor:delete", "name": "Delete Vendors", "resource": "vendor", "action": "delete", "description": "Delete vendors"},
+    {"code": "vendor_contract:create", "name": "Create Vendor Contracts", "resource": "vendor_contract", "action": "create", "description": "Create vendor contracts"},
+    {"code": "vendor_contract:read", "name": "Read Vendor Contracts", "resource": "vendor_contract", "action": "read", "description": "View vendor contracts"},
+    {"code": "vendor_contract:modify", "name": "Modify Vendor Contracts", "resource": "vendor_contract", "action": "modify", "description": "Update vendor contracts"},
+    {"code": "vendor_contract:delete", "name": "Delete Vendor Contracts", "resource": "vendor_contract", "action": "delete", "description": "Delete vendor contracts"},
+    {"code": "warranty:create", "name": "Create Warranties", "resource": "warranty", "action": "create", "description": "Create warranties"},
+    {"code": "warranty:read", "name": "Read Warranties", "resource": "warranty", "action": "read", "description": "View warranties"},
+    {"code": "warranty:modify", "name": "Modify Warranties", "resource": "warranty", "action": "modify", "description": "Update warranties"},
+    {"code": "warranty:delete", "name": "Delete Warranties", "resource": "warranty", "action": "delete", "description": "Delete warranties"},
+    {"code": "work_order:read", "name": "Read Work Orders", "resource": "work_order", "action": "read", "description": "View work orders"},
+    {"code": "work_order:write", "name": "Write Work Orders", "resource": "work_order", "action": "write", "description": "Create/update work orders"},
+    {"code": "workspace:read", "name": "Read Workspaces", "resource": "workspace", "action": "read", "description": "View workspaces"},
+    {"code": "workspace:manage", "name": "Manage Workspaces", "resource": "workspace", "action": "manage", "description": "Create/update/delete workspaces"},
 ]
 
 logger = logging.getLogger(__name__)
@@ -138,7 +221,7 @@ def _seed_demo(db: Session) -> None:
         ("tech", "Tech User", "tech"),
         ("manager", "Manager User", "manager"),
     ]
-    password_hash = _hash_password("inverum2026")
+    password_hash = _hash_password("admin")
 
     for username, display_name, _ in demo_users:
         user = User(
@@ -186,10 +269,51 @@ def _seed_dev(db: Session) -> None:
         tenant_id=tenant.id,
         provider="local",
         provider_id="admin",
-        metadata_={"password_hash": _hash_password("devpassword")},
+        metadata_={"password_hash": _hash_password("admin")},
     ))
 
-    logger.info("Dev seed complete: tenant=dev, admin user created.")
+    # Create Super Admin role with ALL permissions
+    role = Role(
+        tenant_id=tenant.id,
+        name="Super Admin",
+        description="Full access to all resources",
+        is_system=True,
+    )
+    db.add(role)
+    db.flush()
+
+    # Assign all permissions to role
+    all_perms = db.query(Permission).filter(Permission.is_active == True).all()
+    for perm in all_perms:
+        db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+
+    # Create admin group with role
+    group = Group(
+        tenant_id=tenant.id,
+        role_id=role.id,
+        name="Admins",
+        description="Full access admin group",
+    )
+    db.add(group)
+    db.flush()
+
+    # Add user to group
+    db.add(UserGroup(user_id=user.id, group_id=group.id))
+
+    # Enable all modules for dev
+    tenant.modules_enabled = {
+        "vendors": True, "supplies": True, "storage": True,
+        "maintenance": True, "checklists": True, "advanced_permissions": True,
+        "integrations": True,
+    }
+
+    db.flush()
+
+    # Seed comprehensive business data
+    from app.seeds.dev_data import seed_dev_data
+    seed_dev_data(db, tenant.id, user.id)
+
+    logger.info("Dev seed complete: tenant=dev, admin user with Super Admin role + business data.")
 
 
 def run_seeds(db: Session) -> None:

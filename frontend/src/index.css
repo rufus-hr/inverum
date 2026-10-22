@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Theme CSS custom properties — set by ThemeProvider at runtime.
+   Default values here match THEME_LIGHT so the app looks correct before
+   ThemeProvider mounts (avoids flash of unstyled content).
+--------------------------------------------------------------------------- */
+:root {
+  --t-primary:       #2563eb;
+  --t-primary-hover: #1d4ed8;
+  --t-primary-fg:    #ffffff;
+
+  --t-bg:            #F8F9FA;
+  --t-surface:       #ffffff;
+  --t-surface-hover: #f8fafc;
+
+  --t-border:        #e2e8f0;
+  --t-border-strong: #cbd5e1;
+
+  --t-text:          #0f172a;
+  --t-text-muted:    #475569;
+  --t-text-subtle:   #94a3b8;
+
+  --t-danger:        #dc2626;
+  --t-danger-bg:     #fef2f2;
+  --t-warning:       #d97706;
+  --t-warning-bg:    #fffbeb;
+  --t-success:       #16a34a;
+  --t-success-bg:    #f0fdf4;
+  --t-info:          #0284c7;
+  --t-info-bg:       #f0f9ff;
+
+  --t-text-xs:   0.6875rem;
+  --t-text-sm:   0.8125rem;
+  --t-text-base: 0.875rem;
+  --t-text-lg:   1rem;
+  --t-text-xl:   1.25rem;
+  --t-text-2xl:  1.5rem;
+
+  --t-font:   'Inter', system-ui, sans-serif;
+  --t-radius: 6px;
+}
+
+/* Apply theme font globally */
+body {
+  font-family: var(--t-font);
+  background-color: var(--t-bg);
+  color: var(--t-text);
+}
+
+/* ---------------------------------------------------------------------------
+   Tailwind v4 @theme inline — exposes CSS vars as Tailwind utility classes.
+   Usage: bg-theme-bg, text-theme-text, text-theme-sm, border-theme-border ...
+--------------------------------------------------------------------------- */
+@theme inline {
+  /* Colors */
+  --color-theme-primary:       var(--t-primary);
+  --color-theme-primary-hover: var(--t-primary-hover);
+  --color-theme-primary-fg:    var(--t-primary-fg);
+
+  --color-theme-bg:            var(--t-bg);
+  --color-theme-surface:       var(--t-surface);
+  --color-theme-surface-hover: var(--t-surface-hover);
+
+  --color-theme-border:        var(--t-border);
+  --color-theme-border-strong: var(--t-border-strong);
+
+  --color-theme-text:          var(--t-text);
+  --color-theme-text-muted:    var(--t-text-muted);
+  --color-theme-text-subtle:   var(--t-text-subtle);
+
+  --color-theme-danger:        var(--t-danger);
+  --color-theme-danger-bg:     var(--t-danger-bg);
+  --color-theme-warning:       var(--t-warning);
+  --color-theme-warning-bg:    var(--t-warning-bg);
+  --color-theme-success:       var(--t-success);
+  --color-theme-success-bg:    var(--t-success-bg);
+  --color-theme-info:          var(--t-info);
+  --color-theme-info-bg:       var(--t-info-bg);
+
+  /* Font sizes */
+  --font-size-theme-xs:   var(--t-text-xs);
+  --font-size-theme-sm:   var(--t-text-sm);
+  --font-size-theme-base: var(--t-text-base);
+  --font-size-theme-lg:   var(--t-text-lg);
+  --font-size-theme-xl:   var(--t-text-xl);
+  --font-size-theme-2xl:  var(--t-text-2xl);
+
+  /* Border radius */
+  --radius-theme: var(--t-radius);
+}
+
+/* Recharts focus fix */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible {
+  outline: none !important;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

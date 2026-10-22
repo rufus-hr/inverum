@@ -21,7 +21,7 @@ def list_plans(
 ):
     query = db.query(Plan).filter(
         Plan.tenant_id == user.tenant_id,
-        Plan.deleted_at == None,
+        Plan.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -37,7 +37,7 @@ def get_plan(
     db: Session = Depends(get_db),
 ):
     p = db.query(Plan).filter(
-        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at == None
+        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at.is_(None)
     ).first()
     if not p:
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -65,7 +65,7 @@ def update_plan(
     db: Session = Depends(get_db),
 ):
     p = db.query(Plan).filter(
-        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at == None
+        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at.is_(None)
     ).first()
     if not p:
         raise HTTPException(status_code=404, detail="Plan not found")
@@ -83,7 +83,7 @@ def delete_plan(
     db: Session = Depends(get_db),
 ):
     p = db.query(Plan).filter(
-        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at == None
+        Plan.id == plan_id, Plan.tenant_id == user.tenant_id, Plan.deleted_at.is_(None)
     ).first()
     if not p:
         raise HTTPException(status_code=404, detail="Plan not found")

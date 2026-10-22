@@ -26,7 +26,7 @@ def list_services(
 ):
     query = db.query(ExternalService).filter(
         ExternalService.tenant_id == user.tenant_id,
-        ExternalService.deleted_at == None,
+        ExternalService.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -44,7 +44,7 @@ def get_service(
     s = db.query(ExternalService).filter(
         ExternalService.id == service_id,
         ExternalService.tenant_id == user.tenant_id,
-        ExternalService.deleted_at == None,
+        ExternalService.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="External service not found")
@@ -74,7 +74,7 @@ def update_service(
     s = db.query(ExternalService).filter(
         ExternalService.id == service_id,
         ExternalService.tenant_id == user.tenant_id,
-        ExternalService.deleted_at == None,
+        ExternalService.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="External service not found")
@@ -94,7 +94,7 @@ def delete_service(
     s = db.query(ExternalService).filter(
         ExternalService.id == service_id,
         ExternalService.tenant_id == user.tenant_id,
-        ExternalService.deleted_at == None,
+        ExternalService.deleted_at.is_(None),
     ).first()
     if not s:
         raise HTTPException(status_code=404, detail="External service not found")
@@ -112,7 +112,7 @@ def list_rules(
 ):
     query = db.query(IntegrationRule).filter(
         IntegrationRule.tenant_id == user.tenant_id,
-        IntegrationRule.deleted_at == None,
+        IntegrationRule.deleted_at.is_(None),
     )
     total = query.count()
     items = query.offset(pagination.offset).limit(pagination.limit).all()
@@ -144,7 +144,7 @@ def update_rule(
     r = db.query(IntegrationRule).filter(
         IntegrationRule.id == rule_id,
         IntegrationRule.tenant_id == user.tenant_id,
-        IntegrationRule.deleted_at == None,
+        IntegrationRule.deleted_at.is_(None),
     ).first()
     if not r:
         raise HTTPException(status_code=404, detail="Integration rule not found")
@@ -164,7 +164,7 @@ def delete_rule(
     r = db.query(IntegrationRule).filter(
         IntegrationRule.id == rule_id,
         IntegrationRule.tenant_id == user.tenant_id,
-        IntegrationRule.deleted_at == None,
+        IntegrationRule.deleted_at.is_(None),
     ).first()
     if not r:
         raise HTTPException(status_code=404, detail="Integration rule not found")
