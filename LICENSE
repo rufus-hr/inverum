@@ -1,26 +1,51 @@
-COMMONS CLAUSE LICENSE CONDITION
+INVERUM DUAL LICENSE NOTICE
+===========================
 
-The Software is provided to you by the Licensor under the License, as
-defined below, subject to the following condition.
+Copyright (c) 2026 Ivan Štimac. All rights reserved.
+For commercial and enterprise licensing inquiries: ivan.stimac@rufus.hr
 
-Without limiting other conditions in the License, the grant of rights
-under the License will not include, and the License does not grant to
-you, the right to Sell the Software.
+Inverum is distributed under a dual-licensing model designed to support both
+open-source digital sovereignty and sustainable enterprise development:
 
-For purposes of the foregoing, "Sell" means practicing any or all of
-the rights granted to you under the License to provide to third parties,
-for a fee or other consideration (including without limitation fees for
-hosting or consulting/support services related to the Software), a
-product or service whose value derives, entirely or substantially, from
-the functionality of the Software. Any license notice or attribution
-required by the License must also include this Commons Clause License
-Condition notice.
+1. OPEN SOURCE CORE (GNU AGPLv3)
+   Except for the Enterprise Edition components, license verification mechanisms,
+   and proprietary notices described in Section 2 below, the Inverum source code
+   is licensed under the GNU Affero General Public License v3.0 (AGPLv3), the
+   full text of which is included below.
 
-Software: Inverum
-License: GNU Affero General Public License v3.0
-Licensor: Ivan Štimac
+2. INVERUM ENTERPRISE LICENSE (FAIR-USE & ANTI-TAMPERING)
+   Enterprise features (including but not limited to Multi-Tenant Management,
+   MSP PlatformUser Cross-Tenant Procurement, SSO/SAML/OIDC, Advanced PAdES-B-LTA
+   Archival Timestamping, and Enterprise Reporting), as well as the cryptographic
+   license verification system, embedded public keys, and user-interface license
+   status notices ("Unlicensed Enterprise" banners), are governed by the
+   Inverum Enterprise License:
 
-For commercial licensing inquiries: ivan.stimac@rufus.hr
+   a) Fair-Use Unlicensed Operation:
+      You may run and evaluate Enterprise features without a paid license key,
+      without time limits, feature degradation, or telemetry transmission,
+      provided that the "Unlicensed Enterprise" notice remains visibly and
+      unaltered at the top of the user interface.
+
+   b) Strict Prohibition of Tampering / Circumvention:
+      You may NOT remove, hide (via CSS, JavaScript, or DOM manipulation),
+      modify, disable, spoof, or bypass the license verification logic, the
+      embedded Ed25519 public key(s), or the "Unlicensed Enterprise" UI banner,
+      nor generate unauthorized license keys. Any modification to remove or
+      suppress the license notice or verification mechanism terminates all
+      rights to use the Software and constitutes willful copyright infringement.
+
+   c) Commercial Enterprise Licensing (Per-Employee Metric):
+      To remove the "Unlicensed Enterprise" notice and obtain a cryptographically
+      signed production license key (or to use Inverum under commercial terms
+      without AGPLv3 copyleft obligations), an active Enterprise subscription is
+      required, tiered by the total number of active employees across all tenants
+      in the installation.
+
+   d) No Managed Hosting / SaaS Resale:
+      Offering Enterprise Edition features or the Software as a managed service,
+      hosted multi-tenant platform, or commercial SaaS to third parties requires
+      a separate commercial agreement with the Licensor.
 
 -------------------------------------------------------------------------------
 
