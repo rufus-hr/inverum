@@ -948,7 +948,7 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
     logger.info("Phase 8: created %d assets, %d identifiers", len(assets), len(identifiers))
 
     # -----------------------------------------------------------------------
-    # PHASE 9: Boxes (25)
+    # PHASE 9: Boxes (25) + Place Assets in Boxes & Storage Units
     # -----------------------------------------------------------------------
     boxes: list[Box] = []
 
@@ -958,7 +958,7 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
         b = Box(
             id=uuid.uuid7(),
             tenant_id=tenant_id,
-            inventory_number=f"BOX-{i + 1:03d}",
+            inventory_number=f"BOX-{i + 1:04d}",
             location_id=loc.id,
             status="open" if i < 10 else "sealed",
         )
@@ -970,7 +970,7 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
         b = Box(
             id=uuid.uuid7(),
             tenant_id=tenant_id,
-            inventory_number=f"BOX-{16 + i:03d}",
+            inventory_number=f"BOX-{16 + i:04d}",
             storage_unit_id=su.id,
             status="open",
         )
@@ -985,7 +985,7 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
         child = Box(
             id=uuid.uuid7(),
             tenant_id=tenant_id,
-            inventory_number=f"BOX-{21 + i:03d}",
+            inventory_number=f"BOX-{21 + i:04d}",
             parent_box_id=parent.id,
             status="open",
         )
@@ -999,14 +999,34 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
         b = Box(
             id=uuid.uuid7(),
             tenant_id=tenant_id,
-            inventory_number=f"BOX-{24 + i:03d}",
+            inventory_number=f"BOX-{24 + i:04d}",
             status="in_transit",
         )
         boxes.append(b)
 
     db.add_all(boxes[-2:])
     db.flush()
-    logger.info("Phase 9: created %d boxes", len(boxes))
+
+    # Place servers/switches/UPS in racks and in_stock assets into boxes/cabinets
+    rack_units = [su for su in storage_units if su.type == "rack"]
+    non_rack_units = [su for su in storage_units if su.type != "rack"]
+    open_boxes = [b for b in boxes if b.status in ("open", "sealed")]
+
+    for a in assets:
+        if rack_units and a.mobility_type == "fixed" and any(k in (a.name or "") for k in ("PowerEdge", "ThinkSystem", "Catalyst", "Smart-UPS")):
+            su = random.choice(rack_units)
+            a.storage_unit_id = su.id
+            a.location_id = su.location_id
+        elif a.status_id == asset_status["in_stock"]:
+            if open_boxes and random.random() < 0.4:
+                chosen_box = random.choice(open_boxes)
+                a.box_id = chosen_box.id
+            elif non_rack_units and random.random() < 0.4:
+                chosen_su = random.choice(non_rack_units)
+                a.storage_unit_id = chosen_su.id
+                a.location_id = chosen_su.location_id
+    db.flush()
+    logger.info("Phase 9: created %d boxes and assigned containers to assets", len(boxes))
 
     # -----------------------------------------------------------------------
     # PHASE 10: Assignments (400)
@@ -1151,7 +1171,110 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
         supplies.append(s)
     db.add_all(supplies)
     db.flush()
-    logger.info("Phase 13: created %d supplies", len(supplies))
+
+    from app.models.consumable import Consumable
+    from app.models.stock_item import StockItem
+    from app.models.accessory import Accessory
+    from app.models.stock_policy import StockPolicy
+    from app.models.stock_movement import StockMovement
+
+    stock_locs = warehouses + server_rooms
+    if not stock_locs:
+        stock_locs = room_locations[:3]
+
+    consumable_instances: list[Consumable] = []
+    stock_item_instances: list[StockItem] = []
+    accessory_instances: list[Accessory] = []
+    stock_policies: list[StockPolicy] = []
+    stock_movements: list[StockMovement] = []
+
+    for s in supplies:
+        # Place each supply in 2 stock locations
+        chosen_locs = random.sample(stock_locs, min(2, len(stock_locs)))
+        for idx_loc, sloc in enumerate(chosen_locs):
+            min_qty = random.choice([5, 10, 15, 20])
+            # Make ~25% below minimum so low-stock alerts/filters have real data
+            curr_qty = random.randint(1, min_qty - 1) if idx_loc == 1 and random.random() < 0.4 else random.randint(min_qty, min_qty * 3)
+
+            if s.supply_type == "consumable":
+                inst = Consumable(
+                    id=uuid.uuid7(),
+                    tenant_id=tenant_id,
+                    supply_id=s.id,
+                    location_id=sloc.id,
+                    current_quantity=curr_qty,
+                    minimum_quantity=min_qty,
+                    is_active=True,
+                )
+                consumable_instances.append(inst)
+                db.add(inst)
+                db.flush()
+                entity_id = inst.id
+            elif s.supply_type == "stock_item":
+                inst = StockItem(
+                    id=uuid.uuid7(),
+                    tenant_id=tenant_id,
+                    supply_id=s.id,
+                    location_id=sloc.id,
+                    quantity=curr_qty,
+                    minimum_quantity=min_qty,
+                    is_active=True,
+                )
+                stock_item_instances.append(inst)
+                db.add(inst)
+                db.flush()
+                entity_id = inst.id
+            else:
+                inst = Accessory(
+                    id=uuid.uuid7(),
+                    tenant_id=tenant_id,
+                    supply_id=s.id,
+                    location_id=sloc.id,
+                    current_quantity=curr_qty,
+                    minimum_quantity=min_qty,
+                    is_active=True,
+                )
+                accessory_instances.append(inst)
+                db.add(inst)
+                db.flush()
+                entity_id = inst.id
+
+            pol = StockPolicy(
+                id=uuid.uuid7(),
+                tenant_id=tenant_id,
+                supply_id=s.id,
+                location_id=sloc.id,
+                minimum_quantity=min_qty,
+                reorder_quantity=min_qty * 2,
+                reorder_period_months=3,
+                responsible_user_id=admin_user_id,
+                is_active=True,
+            )
+            stock_policies.append(pol)
+
+            mv = StockMovement(
+                id=uuid.uuid7(),
+                tenant_id=tenant_id,
+                supply_id=s.id,
+                entity_type=s.supply_type,
+                entity_id=entity_id,
+                location_id=sloc.id,
+                quantity=curr_qty,
+                reason="purchase",
+                actor_id=admin_user_id,
+                external_ref=f"PRIMA-2025-{random.randint(100, 999)}",
+                notes="Inicijalno stanje skladišta",
+            )
+            stock_movements.append(mv)
+
+    db.add_all(stock_policies)
+    db.add_all(stock_movements)
+    db.flush()
+    logger.info(
+        "Phase 13: created %d supplies, %d consumables, %d stock_items, %d accessories, %d policies",
+        len(supplies), len(consumable_instances), len(stock_item_instances),
+        len(accessory_instances), len(stock_policies),
+    )
 
     # -------------------------------------------------------------------
     # PHASE 14: Checklist Templates + Items

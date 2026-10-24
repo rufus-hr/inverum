@@ -1,10 +1,22 @@
-import { useState, useEffect, type ReactNode } from 'react';
-import { apiFetch } from '../lib/api';
+import React, { useState, useMemo, type ReactNode } from 'react';
 import {
   Plus, Search, ChevronRight, Trash2, Pencil, X,
   Package, AlertTriangle, CheckCircle, XCircle,
-  ArrowLeftRight, Filter,
+  ArrowLeftRight, Filter, Minus,
 } from 'lucide-react';
+import { useApiQuery } from '../hooks/useApi';
+import { apiFetch } from '../lib/api';
+import { useToast } from '../hooks/useToast';
+import type {
+  PagedResponse,
+  SupplyResponse,
+  SupplyCreatePayload,
+  StockInstanceResponse,
+  StockInstanceCreatePayload,
+  StockMovementResponse,
+  StockMovementCreatePayload,
+  LocationResponse,
+} from '../types/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,50 +24,17 @@ type SupplyType = 'consumable' | 'stock_item' | 'accessory';
 type StockStatus = 'ok' | 'low' | 'out';
 type MainTab = 'supplies' | 'stock' | 'movements';
 
-interface Supply {
-  id: string;
-  name: string;
-  supply_type: SupplyType;
-  part_number: string | null;
-  category: string | null;
-  unit: string;
-  unit_price: number | null;
-  currency: string | null;
-  vendor_name: string | null;
-  manufacturer_name: string | null;
-  compatible_with: string | null; // newline-separated lista modela
-  is_active: boolean;
-}
-
-interface StockInstance {
-  id: string;
-  entity_type: SupplyType;
-  supply_id: string;
+interface EnrichedStockInstance extends StockInstanceResponse {
   supply_name: string;
-  location_path: string; // e.g. "2. kat / IT skladište"
-  quantity: number;
-  minimum_quantity: number;
-  linked_name: string | null; // linked asset or user name
-}
-
-interface Movement {
-  id: string;
-  supply_name: string;
-  entity_type: SupplyType;
   location_path: string;
-  quantity: number; // positive = add, negative = take
-  reason: string;
-  actor_name: string | null;
-  created_at: string;
+  linked_name: string | null;
 }
 
-// ── Mock data ────────────────────────────────────────────────────────────────
-
-let MOCK_SUPPLIES: Supply[] = [];
-
-let MOCK_STOCK: StockInstance[] = [];
-
-let MOCK_MOVEMENTS: Movement[] = [];
+interface EnrichedMovement extends StockMovementResponse {
+  supply_name: string;
+  location_path: string;
+  actor_name: string | null;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,8 +80,23 @@ const REASON_LABEL: Record<string, string> = {
 
 // ── Supply detail panel ───────────────────────────────────────────────────────
 
-function SupplyDetailPanel({ supply, onClose }: { supply: Supply; onClose: () => void }) {
-  const instances = MOCK_STOCK.filter(s => s.supply_id === supply.id);
+function SupplyDetailPanel({
+  supply,
+  stockInstances,
+  onClose,
+  onEdit,
+  onDelete,
+  onUpdated,
+}: {
+  supply: SupplyResponse;
+  stockInstances: EnrichedStockInstance[];
+  onClose: () => void;
+  onEdit: (s: SupplyResponse) => void;
+  onDelete: (s: SupplyResponse) => void;
+  onUpdated: () => void;
+}) {
+  const toast = useToast();
+  const instances = stockInstances.filter(s => s.supply_id === supply.id);
   const totalQty = instances.reduce((sum, s) => sum + s.quantity, 0);
 
   const [models, setModels] = useState<string[]>(
@@ -110,19 +104,36 @@ function SupplyDetailPanel({ supply, onClose }: { supply: Supply; onClose: () =>
   );
   const [newModel, setNewModel] = useState('');
 
+  React.useEffect(() => {
+    setModels(supply.compatible_with ? supply.compatible_with.split('\n').filter(Boolean) : []);
+  }, [supply]);
+
+  async function saveModels(updatedModels: string[]) {
+    setModels(updatedModels);
+    try {
+      await apiFetch(`/supplies/${supply.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ compatible_with: updatedModels.join('\n') || null }),
+      });
+      onUpdated();
+    } catch {
+      toast.error('Greška pri spremanju kompatibilnih modela');
+    }
+  }
+
   function addModel() {
     const trimmed = newModel.trim();
     if (!trimmed || models.includes(trimmed)) return;
-    setModels([...models, trimmed]);
     setNewModel('');
+    saveModels([...models, trimmed]);
   }
 
   function removeModel(model: string) {
-    setModels(models.filter(m => m !== model));
+    saveModels(models.filter(m => m !== model));
   }
 
   return (
-    <div className="w-96 border-l border-slate-200 bg-white flex flex-col overflow-hidden">
+    <div className="w-96 border-l border-slate-200 bg-white flex flex-col overflow-hidden shrink-0">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
         <div>
           <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Supply</p>
@@ -157,22 +168,10 @@ function SupplyDetailPanel({ supply, onClose }: { supply: Supply; onClose: () =>
               <dt className="text-slate-400">Jedinica</dt>
               <dd className="text-slate-700">{supply.unit}</dd>
             </div>
-            {supply.unit_price && (
+            {supply.unit_price != null && (
               <div className="flex justify-between">
                 <dt className="text-slate-400">Cijena/kom</dt>
-                <dd className="text-slate-700">{Number(supply.unit_price).toFixed(2)} {supply.currency}</dd>
-              </div>
-            )}
-            {supply.vendor_name && (
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Vendor</dt>
-                <dd className="text-slate-700">{supply.vendor_name}</dd>
-              </div>
-            )}
-            {supply.manufacturer_name && (
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Proizvođač</dt>
-                <dd className="text-slate-700">{supply.manufacturer_name}</dd>
+                <dd className="text-slate-700">{Number(supply.unit_price).toFixed(2)} {supply.currency ?? 'EUR'}</dd>
               </div>
             )}
           </dl>
@@ -247,12 +246,18 @@ function SupplyDetailPanel({ supply, onClose }: { supply: Supply; onClose: () =>
       </div>
 
       <div className="border-t border-slate-100 p-4 flex gap-2">
-        <button className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors">
+        <button
+          onClick={() => onEdit(supply)}
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors"
+        >
           <Pencil size={14} />
           Uredi
         </button>
-        {totalQty === 0 && (
-          <button className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 text-red-600 transition-colors">
+        {instances.length === 0 && (
+          <button
+            onClick={() => onDelete(supply)}
+            className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-red-200 hover:bg-red-50 text-red-600 transition-colors"
+          >
             <Trash2 size={14} />
             Obriši
           </button>
@@ -264,12 +269,106 @@ function SupplyDetailPanel({ supply, onClose }: { supply: Supply; onClose: () =>
 
 // ── Tab: Supplies (catalog) ───────────────────────────────────────────────────
 
-function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
+function SuppliesTab({
+  supplies,
+  stockInstances,
+  supplyType,
+  onRefresh,
+}: {
+  supplies: SupplyResponse[];
+  stockInstances: EnrichedStockInstance[];
+  supplyType: SupplyType | null;
+  onRefresh: () => void;
+}) {
+  const toast = useToast();
   const [search, setSearch] = useState('');
-  const [selectedSupply, setSelectedSupply] = useState<Supply | null>(null);
+  const [typeFilter, setTypeFilter] = useState<SupplyType | 'all'>(supplyType ?? 'all');
+  const [selectedSupply, setSelectedSupply] = useState<SupplyResponse | null>(null);
+  const [editingSupply, setEditingSupply] = useState<SupplyResponse | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
-  const filtered = MOCK_SUPPLIES.filter(s =>
-    (!supplyType || s.supply_type === supplyType) &&
+  // Modal fields
+  const [name, setName] = useState('');
+  const [sType, setSType] = useState<SupplyType>('consumable');
+  const [partNo, setPartNo] = useState('');
+  const [category, setCategory] = useState('');
+  const [unit, setUnit] = useState('kom');
+  const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('EUR');
+
+  const openCreateModal = () => {
+    setEditingSupply(null);
+    setName('');
+    setSType(supplyType ?? 'consumable');
+    setPartNo('');
+    setCategory('');
+    setUnit('kom');
+    setPrice('');
+    setCurrency('EUR');
+    setShowModal(true);
+  };
+
+  const openEditModal = (s: SupplyResponse) => {
+    setEditingSupply(s);
+    setName(s.name);
+    setSType(s.supply_type);
+    setPartNo(s.part_number ?? '');
+    setCategory(s.category ?? '');
+    setUnit(s.unit ?? 'kom');
+    setPrice(s.unit_price != null ? String(s.unit_price) : '');
+    setCurrency(s.currency ?? 'EUR');
+    setShowModal(true);
+  };
+
+  const handleSaveSupply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const payload: SupplyCreatePayload = {
+      name: name.trim(),
+      supply_type: sType,
+      part_number: partNo.trim() || null,
+      category: category.trim() || null,
+      unit: unit.trim() || 'kom',
+      unit_price: price ? Number(price) : null,
+      currency: currency.trim() || 'EUR',
+      is_active: true,
+    };
+
+    try {
+      if (editingSupply) {
+        const updated = await apiFetch<SupplyResponse>(`/supplies/${editingSupply.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        toast.success(`Supply "${updated.name}" ažuriran`);
+        setSelectedSupply(updated);
+      } else {
+        const created = await apiFetch<SupplyResponse>('/supplies/', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        toast.success(`Supply "${created.name}" kreiran`);
+      }
+      setShowModal(false);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Greška pri spremanju supply stavke');
+    }
+  };
+
+  const handleDeleteSupply = async (s: SupplyResponse) => {
+    try {
+      await apiFetch(`/supplies/${s.id}`, { method: 'DELETE' });
+      toast.success(`Supply "${s.name}" obrisan`);
+      setSelectedSupply(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Greška pri brisanju supply stavke');
+    }
+  };
+
+  const filtered = supplies.filter(s =>
+    (typeFilter === 'all' || s.supply_type === typeFilter) &&
     (s.name.toLowerCase().includes(search.toLowerCase()) ||
      (s.part_number ?? '').toLowerCase().includes(search.toLowerCase()))
   );
@@ -278,7 +377,7 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
     <div className="flex flex-1 overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white">
+        <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-100 bg-white flex-wrap">
           <div className="relative flex-1 max-w-xs">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -294,7 +393,27 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
               className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+
+          {!supplyType && (
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+              {(['all', 'consumable', 'stock_item', 'accessory'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTypeFilter(t)}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                    typeFilter === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t === 'all' ? 'Sve' : TYPE_LABEL[t]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={openCreateModal}
+            className="ml-auto flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             <Plus size={15} />
             Dodaj supply
           </button>
@@ -308,7 +427,7 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Naziv</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tip</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Part no.</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Vendor</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Kategorija</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Cijena</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3" />
@@ -333,9 +452,9 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">{supply.part_number ?? '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{supply.vendor_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{supply.category ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-600 tabular-nums">
-                    {supply.unit_price ? `${Number(supply.unit_price).toFixed(2)} ${supply.currency}` : '—'}
+                    {supply.unit_price != null ? `${Number(supply.unit_price).toFixed(2)} ${supply.currency ?? 'EUR'}` : '—'}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${supply.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -359,7 +478,105 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
 
       {/* Detail panel */}
       {selectedSupply && (
-        <SupplyDetailPanel supply={selectedSupply} onClose={() => setSelectedSupply(null)} />
+        <SupplyDetailPanel
+          supply={selectedSupply}
+          stockInstances={stockInstances}
+          onClose={() => setSelectedSupply(null)}
+          onEdit={openEditModal}
+          onDelete={handleDeleteSupply}
+          onUpdated={onRefresh}
+        />
+      )}
+
+      {/* Create/Edit Supply Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">
+                {editingSupply ? 'Uredi Supply' : 'Novi Supply (SKU)'}
+              </h3>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveSupply} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Naziv</label>
+                <input
+                  required
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="npr. HP 85A Toner ili SFP+ 10G Transceiver"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Tip</label>
+                  <select
+                    value={sType}
+                    onChange={e => setSType(e.target.value as SupplyType)}
+                    disabled={!!editingSupply}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white disabled:bg-slate-50"
+                  >
+                    <option value="consumable">Consumable</option>
+                    <option value="stock_item">Spare part (Stock Item)</option>
+                    <option value="accessory">Accessory</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Part Number</label>
+                  <input
+                    value={partNo}
+                    onChange={e => setPartNo(e.target.value)}
+                    placeholder="npr. CE285A"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Kategorija</label>
+                  <input
+                    value={category}
+                    onChange={e => setCategory(e.target.value)}
+                    placeholder="npr. Toner"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Cijena</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={price}
+                    onChange={e => setPrice(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Jedinica</label>
+                  <input
+                    value={unit}
+                    onChange={e => setUnit(e.target.value)}
+                    placeholder="kom"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">
+                  Odustani
+                </button>
+                <button type="submit" className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                  Spremi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -367,23 +584,118 @@ function SuppliesTab({ supplyType }: { supplyType: SupplyType | null }) {
 
 // ── Tab: Stock (instances) ────────────────────────────────────────────────────
 
-function StockTab({ supplyType }: { supplyType: SupplyType | null }) {
+function StockTab({
+  stockInstances,
+  supplies,
+  locations,
+  supplyType,
+  onRefresh,
+}: {
+  stockInstances: EnrichedStockInstance[];
+  supplies: SupplyResponse[];
+  locations: LocationResponse[];
+  supplyType: SupplyType | null;
+  onRefresh: () => void;
+}) {
+  const toast = useToast();
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<SupplyType | 'all'>(supplyType ?? 'all');
 
-  const effectiveType = supplyType ?? 'consumable';
+  // Create Stock Instance modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newSupplyId, setNewSupplyId] = useState('');
+  const [newLocId, setNewLocId] = useState('');
+  const [newQty, setNewQty] = useState(10);
+  const [newMinQty, setNewMinQty] = useState(3);
 
-  const instances = MOCK_STOCK.filter(s =>
-    s.entity_type === effectiveType &&
+  // Quick Movement modal (+ / -)
+  const [movementTarget, setMovementTarget] = useState<{ inst: EnrichedStockInstance; mode: 'add' | 'take' } | null>(null);
+  const [moveQty, setMoveQty] = useState(1);
+  const [moveReason, setMoveReason] = useState<'purchase' | 'usage' | 'transfer' | 'adjustment' | 'wasted'>('purchase');
+  const [moveNotes, setMoveNotes] = useState('');
+
+  const instances = stockInstances.filter(s =>
+    (typeFilter === 'all' || s.entity_type === typeFilter) &&
     ((s.supply_name ?? '').toLowerCase().includes(search.toLowerCase()) ||
      (s.location_path ?? '').toLowerCase().includes(search.toLowerCase()))
   );
 
-  const colLabel = effectiveType === 'accessory' ? 'Linked na' : effectiveType === 'consumable' ? 'Asset' : null;
+  const openAddInstance = () => {
+    setNewSupplyId(supplies[0]?.id ?? '');
+    setNewLocId(locations[0]?.id ?? '');
+    setNewQty(10);
+    setNewMinQty(3);
+    setShowAddModal(true);
+  };
+
+  const handleCreateInstance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const sup = supplies.find(s => s.id === newSupplyId);
+    if (!sup || !newLocId) return;
+    const payload: StockInstanceCreatePayload = {
+      supply_id: sup.id,
+      entity_type: sup.supply_type,
+      location_id: newLocId,
+      quantity: newQty,
+      minimum_quantity: newMinQty,
+    };
+    try {
+      await apiFetch('/stock/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      toast.success(`Zaliha za "${sup.name}" dodana na lokaciju`);
+      setShowAddModal(false);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Greška pri kreiranju zalihe');
+    }
+  };
+
+  const openMovementModal = (inst: EnrichedStockInstance, mode: 'add' | 'take') => {
+    setMovementTarget({ inst, mode });
+    setMoveQty(1);
+    setMoveReason(mode === 'add' ? 'purchase' : 'usage');
+    setMoveNotes('');
+  };
+
+  const handleConfirmMovement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!movementTarget || moveQty <= 0) return;
+    const { inst, mode } = movementTarget;
+    const signedQty = mode === 'add' ? moveQty : -moveQty;
+    const payload: StockMovementCreatePayload = {
+      supply_id: inst.supply_id,
+      entity_type: inst.entity_type,
+      entity_id: inst.id,
+      location_id: inst.location_id,
+      storage_unit_id: inst.storage_unit_id,
+      box_id: inst.box_id,
+      quantity: signedQty,
+      reason: moveReason,
+      notes: moveNotes.trim() || null,
+    };
+    try {
+      await apiFetch(`/supplies/${inst.supply_id}/move`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      toast.success(
+        mode === 'add'
+          ? `Dodano +${moveQty} na zalihu (${inst.supply_name})`
+          : `Razduženo -${moveQty} sa zalihe (${inst.supply_name})`
+      );
+      setMovementTarget(null);
+      onRefresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Greška pri knjiženju promjene zalihe');
+    }
+  };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center gap-4 px-6 py-3 border-b border-slate-100 bg-white">
+      <div className="flex items-center gap-4 px-6 py-3 border-b border-slate-100 bg-white flex-wrap">
         <div className="relative max-w-xs flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -395,12 +707,31 @@ function StockTab({ supplyType }: { supplyType: SupplyType | null }) {
                 setSearch('');
               }
             }}
-            placeholder="Pretraži..."
+            placeholder="Pretraži zalihe po nazivu ili lokaciji..."
             className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
-        <button className="ml-auto flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        {!supplyType && (
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+            {(['all', 'consumable', 'stock_item', 'accessory'] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${
+                  typeFilter === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {t === 'all' ? 'Sve' : TYPE_LABEL[t]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={openAddInstance}
+          className="ml-auto flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus size={15} />
           Dodaj na lokaciju
         </button>
@@ -412,13 +743,12 @@ function StockTab({ supplyType }: { supplyType: SupplyType | null }) {
           <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Supply</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tip</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Lokacija</th>
-              {colLabel && (
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{colLabel}</th>
-              )}
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Min</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Kretanje</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -427,10 +757,12 @@ function StockTab({ supplyType }: { supplyType: SupplyType | null }) {
               return (
                 <tr key={inst.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-3 font-medium text-slate-800">{inst.supply_name}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLOR[inst.entity_type]}`}>
+                      {TYPE_LABEL[inst.entity_type]}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{inst.location_path}</td>
-                  {colLabel && (
-                    <td className="px-4 py-3 text-slate-500 text-xs">{inst.linked_name ?? '—'}</td>
-                  )}
                   <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{inst.quantity}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-400">{inst.minimum_quantity}</td>
                   <td className="px-4 py-3">
@@ -438,27 +770,208 @@ function StockTab({ supplyType }: { supplyType: SupplyType | null }) {
                       <StatusIcon status={status} />
                     </div>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => openMovementModal(inst, 'add')}
+                        className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors"
+                        title="Dopuni zalihu (+)"
+                      >
+                        <Plus size={13} />
+                      </button>
+                      <button
+                        onClick={() => openMovementModal(inst, 'take')}
+                        disabled={inst.quantity <= 0}
+                        className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-40 transition-colors"
+                        title="Potroši / razduži (-)"
+                      >
+                        <Minus size={13} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
             {instances.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-slate-400">Nema {TYPE_LABEL[effectiveType].toLowerCase()}a na zalihama.</td>
+                <td colSpan={7} className="px-6 py-12 text-center text-sm text-slate-400">
+                  Nema pronađenih stavki na zalihama.
+                </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Create Stock Instance Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Dodaj zalihu na lokaciju</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateInstance} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Supply (SKU)</label>
+                <select
+                  required
+                  value={newSupplyId}
+                  onChange={e => setNewSupplyId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                >
+                  {supplies.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({TYPE_LABEL[s.supply_type]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Lokacija</label>
+                <select
+                  required
+                  value={newLocId}
+                  onChange={e => setNewLocId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                >
+                  {locations.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Početna količina</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newQty}
+                    onChange={e => setNewQty(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Minimalna količina</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newMinQty}
+                    onChange={e => setNewMinQty(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">
+                  Odustani
+                </button>
+                <button type="submit" className="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                  Spremi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Stock Movement Modal (+ / -) */}
+      {movementTarget && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">
+                {movementTarget.mode === 'add' ? 'Dopuna zalihe (+)' : 'Potrošnja / Razduženje (-)'}
+              </h3>
+              <button onClick={() => setMovementTarget(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmMovement} className="p-6 space-y-4">
+              <div className="bg-slate-50 p-3 rounded-lg text-xs text-slate-600 space-y-1">
+                <div className="font-semibold text-slate-800 text-sm">{movementTarget.inst.supply_name}</div>
+                <div>Lokacija: {movementTarget.inst.location_path} • Trenutno: <b>{movementTarget.inst.quantity}</b></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Količina</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={movementTarget.mode === 'take' ? movementTarget.inst.quantity : 10000}
+                    value={moveQty}
+                    onChange={e => setMoveQty(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Razlog</label>
+                  <select
+                    value={moveReason}
+                    onChange={e => setMoveReason(e.target.value as any)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    {movementTarget.mode === 'add' ? (
+                      <>
+                        <option value="purchase">Nabava (Purchase)</option>
+                        <option value="adjustment">Korekcija (Adjustment)</option>
+                        <option value="transfer">Transfer</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="usage">Upotreba (Usage)</option>
+                        <option value="transfer">Transfer</option>
+                        <option value="wasted">Otpad (Wasted)</option>
+                        <option value="adjustment">Korekcija (Adjustment)</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Napomena (opcionalno)</label>
+                <input
+                  value={moveNotes}
+                  onChange={e => setMoveNotes(e.target.value)}
+                  placeholder="npr. Zamjena tonera u sobi 204..."
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setMovementTarget(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">
+                  Odustani
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 text-sm font-semibold text-white rounded-lg ${
+                    movementTarget.mode === 'add' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
+                >
+                  Potvrdi knjiženje
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Tab: Movements (ledger) ───────────────────────────────────────────────────
 
-function MovementsTab({ supplyType }: { supplyType: SupplyType | null }) {
-  const movements = supplyType
-    ? MOCK_MOVEMENTS.filter(m => m.entity_type === supplyType)
-    : MOCK_MOVEMENTS;
+function MovementsTab({
+  movements,
+  supplyType,
+}: {
+  movements: EnrichedMovement[];
+  supplyType: SupplyType | null;
+}) {
+  const filtered = supplyType
+    ? movements.filter(m => m.entity_type === supplyType)
+    : movements;
   return (
     <div className="flex-1 overflow-y-auto">
       <table className="w-full text-sm">
@@ -469,12 +982,12 @@ function MovementsTab({ supplyType }: { supplyType: SupplyType | null }) {
             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Lokacija</th>
             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Razlog</th>
             <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Qty</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Korisnik</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Napomena</th>
             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Datum</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {movements.map(m => (
+          {filtered.map(m => (
             <tr key={m.id} className="hover:bg-slate-50 transition-colors">
               <td className="px-6 py-3 font-medium text-slate-800">{m.supply_name}</td>
               <td className="px-4 py-3">
@@ -487,10 +1000,17 @@ function MovementsTab({ supplyType }: { supplyType: SupplyType | null }) {
               <td className={`px-4 py-3 text-right font-semibold tabular-nums ${m.quantity > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                 {formatQty(m.quantity)}
               </td>
-              <td className="px-4 py-3 text-slate-500">{m.actor_name ?? '—'}</td>
+              <td className="px-4 py-3 text-slate-500 text-xs">{m.notes ?? m.external_ref ?? '—'}</td>
               <td className="px-4 py-3 text-slate-400 text-xs">{formatDate(m.created_at)}</td>
             </tr>
           ))}
+          {filtered.length === 0 && (
+            <tr>
+              <td colSpan={7} className="px-6 py-12 text-center text-sm text-slate-400">
+                Nema zabilježenih kretanja na zalihama.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -501,55 +1021,65 @@ function MovementsTab({ supplyType }: { supplyType: SupplyType | null }) {
 
 export function SupplyDashboard({ supplyType = null }: { supplyType?: SupplyType | null } = {}) {
   const [activeTab, setActiveTab] = useState<MainTab>('supplies');
-  const [, setDataVersion] = useState(0);
 
-  useEffect(() => {
-    let loaded = 0;
-    const bump = () => { loaded++; if (loaded > 0) setDataVersion(v => v + 1); };
-    Promise.all([
-      apiFetch<{ items: any[] }>('/supplies/?limit=200').catch(() => ({ items: [] })),
-      apiFetch<{ items: any[] }>('/stock/?limit=200').catch(() => ({ items: [] })),
-      apiFetch<{ items: any[] }>('/movements/?limit=200').catch(() => ({ items: [] })),
-      apiFetch<{ items: any[] }>('/locations/?limit=200').catch(() => ({ items: [] })),
-    ]).then(([supResp, stockResp, movResp, locResp]) => {
-      const supplyMap = new Map<string, string>();
-      if (supResp.items?.length > 0) {
-        MOCK_SUPPLIES = supResp.items as Supply[];
-        for (const s of supResp.items) supplyMap.set(s.id, s.name);
-        bump();
-      }
-      const locMap = new Map<string, string>();
-      for (const l of locResp.items ?? []) locMap.set(l.id, l.name);
+  const { data: supResp, refetch: refetchSupplies } = useApiQuery<PagedResponse<SupplyResponse>>('/supplies/?limit=200');
+  const { data: stockResp, refetch: refetchStock } = useApiQuery<PagedResponse<StockInstanceResponse>>('/stock/?limit=200');
+  const { data: movResp, refetch: refetchMovements } = useApiQuery<PagedResponse<StockMovementResponse>>('/movements/?limit=200');
+  const { data: locResp } = useApiQuery<PagedResponse<LocationResponse>>('/locations/?limit=200');
 
-      if (stockResp.items?.length > 0) {
-        MOCK_STOCK = stockResp.items.map((inst: any) => ({
-          ...inst,
-          supply_name: inst.supply_name ?? supplyMap.get(inst.supply_id) ?? inst.supply_id?.slice(0, 8) ?? 'Unknown',
-          location_path: inst.location_path ?? locMap.get(inst.location_id) ?? (inst.storage_unit_id ? 'Storage Unit' : inst.box_id ? 'Box' : '—'),
-          minimum_quantity: inst.minimum_quantity ?? 0,
-        }));
-        bump();
-      }
-      if (movResp.items?.length > 0) {
-        MOCK_MOVEMENTS = movResp.items.map((m: any) => ({
-          ...m,
-          supply_name: m.supply_name ?? supplyMap.get(m.supply_id) ?? m.supply_id?.slice(0, 8) ?? 'Unknown',
-          location_path: m.location_path ?? locMap.get(m.location_id) ?? '—',
-          entity_type: m.entity_type ?? 'stock_item',
-        }));
-        bump();
-      }
-    });
-  }, []);
+  const supplies = supResp?.items ?? [];
+  const locations = locResp?.items ?? [];
+
+  const handleRefreshAll = () => {
+    refetchSupplies();
+    refetchStock();
+    refetchMovements();
+  };
+
+  const { enrichedStock, enrichedMovements } = useMemo(() => {
+    const supplyMap = new Map<string, string>();
+    for (const s of supplies) supplyMap.set(s.id, s.name);
+
+    const locMap = new Map<string, string>();
+    for (const l of locations) locMap.set(l.id, l.name);
+
+    const eStock: EnrichedStockInstance[] = (stockResp?.items ?? []).map(inst => ({
+      ...inst,
+      supply_name: supplyMap.get(inst.supply_id) ?? inst.supply_id.slice(0, 8),
+      location_path: inst.location_id
+        ? (locMap.get(inst.location_id) ?? 'Nepoznata lokacija')
+        : inst.storage_unit_id
+          ? 'Storage Unit'
+          : inst.box_id
+            ? 'Box'
+            : '—',
+      linked_name: null,
+    }));
+
+    const eMov: EnrichedMovement[] = (movResp?.items ?? []).map(m => ({
+      ...m,
+      supply_name: supplyMap.get(m.supply_id) ?? m.supply_id.slice(0, 8),
+      location_path: m.location_id
+        ? (locMap.get(m.location_id) ?? 'Nepoznata lokacija')
+        : m.storage_unit_id
+          ? 'Storage Unit'
+          : m.box_id
+            ? 'Box'
+            : '—',
+      actor_name: null,
+    }));
+
+    return { enrichedStock: eStock, enrichedMovements: eMov };
+  }, [supplies, locations, stockResp, movResp]);
 
   const TABS: { id: MainTab; label: string; icon: ReactNode }[] = [
-    { id: 'supplies', label: 'Supplies', icon: <Package size={15} /> },
-    { id: 'stock', label: 'Stock', icon: <Filter size={15} /> },
-    { id: 'movements', label: 'Movements', icon: <ArrowLeftRight size={15} /> },
+    { id: 'supplies', label: `Supplies (${supplies.length})`, icon: <Package size={15} /> },
+    { id: 'stock', label: `Stock (${enrichedStock.length})`, icon: <Filter size={15} /> },
+    { id: 'movements', label: `Movements (${enrichedMovements.length})`, icon: <ArrowLeftRight size={15} /> },
   ];
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden bg-white">
+    <div className="flex flex-col flex-1 overflow-hidden bg-white h-full">
       {/* Tab bar */}
       <div className="border-b border-slate-200 px-6">
         <div className="flex items-center gap-1">
@@ -572,9 +1102,29 @@ export function SupplyDashboard({ supplyType = null }: { supplyType?: SupplyType
 
       {/* Tab content */}
       <div className="flex flex-1 overflow-hidden">
-        {activeTab === 'supplies' && <SuppliesTab supplyType={supplyType} />}
-        {activeTab === 'stock' && <StockTab supplyType={supplyType} />}
-        {activeTab === 'movements' && <MovementsTab supplyType={supplyType} />}
+        {activeTab === 'supplies' && (
+          <SuppliesTab
+            supplies={supplies}
+            stockInstances={enrichedStock}
+            supplyType={supplyType}
+            onRefresh={handleRefreshAll}
+          />
+        )}
+        {activeTab === 'stock' && (
+          <StockTab
+            stockInstances={enrichedStock}
+            supplies={supplies}
+            locations={locations}
+            supplyType={supplyType}
+            onRefresh={handleRefreshAll}
+          />
+        )}
+        {activeTab === 'movements' && (
+          <MovementsTab
+            movements={enrichedMovements}
+            supplyType={supplyType}
+          />
+        )}
       </div>
     </div>
   );

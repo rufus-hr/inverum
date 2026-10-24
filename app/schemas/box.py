@@ -5,7 +5,8 @@ from pydantic import BaseModel
 
 class BoxBase(BaseModel):
     inventory_number: str
-    location_id: uuid.UUID
+    location_id: uuid.UUID | None = None
+    storage_unit_id: uuid.UUID | None = None
     parent_box_id: uuid.UUID | None = None
     status: str = "open"
     notes: str | None = None
@@ -18,6 +19,7 @@ class BoxCreate(BoxBase):
 class BoxModify(BaseModel):
     inventory_number: str | None = None
     location_id: uuid.UUID | None = None
+    storage_unit_id: uuid.UUID | None = None
     parent_box_id: uuid.UUID | None = None
     status: str | None = None
     notes: str | None = None

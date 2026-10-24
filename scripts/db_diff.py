@@ -75,8 +75,17 @@ def diff_schema(safe: bool = False) -> list[str]:
             col_type = col.type.compile(engine.dialect)
             nullable = "NULL" if col.nullable else "NOT NULL"
             default = ""
-            if col.server_default:
-                default = f" DEFAULT {col.server_default.arg}"
+            if col.server_default is not None:
+                default_arg = getattr(col.server_default, "arg", col.server_default)
+                default = f" DEFAULT {default_arg}"
+            elif col.default is not None and getattr(col.default, "is_scalar", False):
+                val = col.default.arg
+                if isinstance(val, bool):
+                    default = f" DEFAULT {'TRUE' if val else 'FALSE'}"
+                elif isinstance(val, str):
+                    default = f" DEFAULT '{val}'"
+                elif isinstance(val, (int, float)):
+                    default = f" DEFAULT {val}"
             statements.append(f"ALTER TABLE {tname} ADD COLUMN {cname} {col_type} {nullable}{default};")
 
         # Dropped columns
@@ -90,18 +99,19 @@ def diff_schema(safe: bool = False) -> list[str]:
             existing_col = existing_cols[cname]
 
             desired_type = str(desired_col.type.compile(engine.dialect)).upper()
-            existing_type = str(existing_col["type"]).upper()
-
-            # Normalize common type aliases
-            type_map = {"BIGINT": "BIGINT", "INTEGER": "INTEGER", "BOOLEAN": "BOOLEAN",
-                        "VARCHAR": "VARCHAR", "TEXT": "TEXT", "TIMESTAMP WITH TIME ZONE": "TIMESTAMP WITH TIME ZONE"}
+            try:
+                existing_type = str(existing_col["type"].compile(engine.dialect)).upper()
+            except Exception:
+                existing_type = str(existing_col["type"]).upper()
 
             if desired_type != existing_type:
-                # Skip false positives (UUID comparisons etc)
+                # Skip false positives (UUID comparisons, timestamp aliases, etc.)
                 if "UUID" in desired_type and "UUID" in existing_type:
                     continue
+                if "TIMESTAMP" in desired_type and "TIMESTAMP" in existing_type:
+                    if getattr(desired_col.type, "timezone", False) == getattr(existing_col["type"], "timezone", False):
+                        continue
                 if desired_type.startswith("VARCHAR") and existing_type.startswith("VARCHAR"):
-                    # Compare lengths
                     if desired_type == existing_type:
                         continue
                 statements.append(f"-- TYPE CHANGE: {tname}.{cname}: {existing_type} -> {desired_type}")
@@ -115,6 +125,7 @@ def diff_schema(safe: bool = False) -> list[str]:
                     statements.append(f"ALTER TABLE {tname} ALTER COLUMN {cname} SET NOT NULL;")
 
     # Index diffs
+    from sqlalchemy.schema import CreateIndex
     for tname in sorted(desired_tables & existing_tables):
         desired_table = desired.tables[tname]
         existing_indexes = {idx["name"]: idx for idx in inspector.get_indexes(tname)}
@@ -122,9 +133,8 @@ def diff_schema(safe: bool = False) -> list[str]:
 
         for iname in sorted(set(desired_indexes) - set(existing_indexes)):
             idx = desired_indexes[iname]
-            cols = ", ".join(c.name for c in idx.columns)
-            unique = "UNIQUE " if idx.unique else ""
-            statements.append(f"CREATE {unique}INDEX {iname} ON {tname} ({cols});")
+            ddl = str(CreateIndex(idx).compile(engine)).strip()
+            statements.append(f"{ddl};")
 
         if not safe:
             for iname in sorted(set(existing_indexes) - set(desired_indexes)):

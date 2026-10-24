@@ -39,6 +39,19 @@ class TemplateUpdate(BaseModel):
     requires_confirmation: bool | None = None
     is_active: bool | None = None
 
+class ItemResponse(BaseModel):
+    id: uuid.UUID
+    template_id: uuid.UUID
+    text: str
+    order_index: int
+    is_blocking: bool
+    requires_note: bool
+    depends_on_item_id: uuid.UUID | None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
 class TemplateResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -48,6 +61,7 @@ class TemplateResponse(BaseModel):
     is_required: bool
     requires_confirmation: bool
     is_active: bool
+    items: list[ItemResponse] = []
 
     class Config:
         from_attributes = True
@@ -66,19 +80,6 @@ class ItemUpdate(BaseModel):
     requires_note: bool | None = None
     depends_on_item_id: uuid.UUID | None = None
     is_active: bool | None = None
-
-class ItemResponse(BaseModel):
-    id: uuid.UUID
-    template_id: uuid.UUID
-    text: str
-    order_index: int
-    is_blocking: bool
-    requires_note: bool
-    depends_on_item_id: uuid.UUID | None
-    is_active: bool
-
-    class Config:
-        from_attributes = True
 
 class ReorderRequest(BaseModel):
     item_ids: list[uuid.UUID]  # ordered list
@@ -141,7 +142,25 @@ def list_templates(
         q = q.filter(ChecklistTemplate.trigger_event == trigger_event)
     if asset_category:
         q = q.filter(ChecklistTemplate.asset_category == asset_category)
-    return q.order_by(ChecklistTemplate.name).all()
+    templates = q.order_by(ChecklistTemplate.name).all()
+    if templates:
+        tpl_ids = [t.id for t in templates]
+        all_items = (
+            db.query(ChecklistItem)
+            .filter(
+                ChecklistItem.template_id.in_(tpl_ids),
+                ChecklistItem.tenant_id == user.tenant_id,
+                ChecklistItem.is_active.is_(True),
+            )
+            .order_by(ChecklistItem.order_index)
+            .all()
+        )
+        items_by_tpl: dict[uuid.UUID, list[ChecklistItem]] = {}
+        for it in all_items:
+            items_by_tpl.setdefault(it.template_id, []).append(it)
+        for t in templates:
+            t.items = items_by_tpl.get(t.id, [])  # type: ignore[attr-defined]
+    return templates
 
 
 @router.get("/templates/{template_id}", response_model=TemplateResponse)

@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel
 
-AssignedToType = Literal["user", "workplace", "location", "stock", "department"]
+AssignedToType = Literal["employee", "user", "workplace", "location", "stock", "department"]
 
 
 class AssetAssignCreate(BaseModel):

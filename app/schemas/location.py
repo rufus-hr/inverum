@@ -4,9 +4,10 @@ from pydantic import BaseModel
 
 
 class LocationBase(BaseModel):
-    location_type_id: uuid.UUID
+    location_type_id: uuid.UUID | None = None
     name: str
-    is_active: bool
+    is_active: bool = True
+    is_stock_location: bool = False
     address_street: str | None = None
     address_city: str | None = None
     address_zip: str | None = None
@@ -16,14 +17,17 @@ class LocationBase(BaseModel):
     legal_entity_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
 
+
 class LocationCreate(LocationBase):
-    pass
+    location_type: str | None = None
 
 
 class LocationModify(BaseModel):
     location_type_id: uuid.UUID | None = None
+    location_type: str | None = None
     name: str | None = None
     is_active: bool | None = None
+    is_stock_location: bool | None = None
     address_street: str | None = None
     address_city: str | None = None
     address_zip: str | None = None

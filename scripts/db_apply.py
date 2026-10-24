@@ -76,9 +76,243 @@ WHERE sdp.deleted_at IS NULL
 GROUP BY sdp.id, sdp.name, sdp.capacity;
 """
 
+LOCATION_TRIGGERS_SQL = """
+-- 1. Resolve effective (location_id, storage_unit_id) for any box_id
+CREATE OR REPLACE FUNCTION fn_resolve_box_container(p_box_id UUID)
+RETURNS TABLE(eff_location_id UUID, eff_storage_unit_id UUID) AS $$
+BEGIN
+    RETURN QUERY
+    WITH RECURSIVE box_ancestors AS (
+        SELECT id, location_id, storage_unit_id, parent_box_id, status, 1 AS depth
+        FROM boxes
+        WHERE id = p_box_id AND deleted_at IS NULL
+        UNION ALL
+        SELECT b.id, b.location_id, b.storage_unit_id, b.parent_box_id, b.status, ba.depth + 1
+        FROM boxes b
+        JOIN box_ancestors ba ON b.id = ba.parent_box_id
+        WHERE ba.location_id IS NULL
+          AND ba.storage_unit_id IS NULL
+          AND ba.status != 'in_transit'
+          AND b.deleted_at IS NULL
+          AND ba.depth < 20
+    )
+    SELECT
+        CASE
+            WHEN EXISTS (SELECT 1 FROM box_ancestors WHERE status = 'in_transit') THEN NULL::UUID
+            ELSE COALESCE(root.location_id, su.location_id)
+        END AS eff_location_id,
+        CASE
+            WHEN EXISTS (SELECT 1 FROM box_ancestors WHERE status = 'in_transit') THEN NULL::UUID
+            ELSE root.storage_unit_id
+        END AS eff_storage_unit_id
+    FROM (
+        SELECT location_id, storage_unit_id
+        FROM box_ancestors
+        ORDER BY depth DESC
+        LIMIT 1
+    ) root
+    LEFT JOIN storage_units su ON su.id = root.storage_unit_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2. BEFORE INSERT OR UPDATE on leaf tables (assets, stock_items, consumables, accessories)
+CREATE OR REPLACE FUNCTION fn_resolve_leaf_location()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_loc_id UUID;
+    v_su_id UUID;
+BEGIN
+    IF NEW.box_id IS NOT NULL THEN
+        SELECT eff_location_id, eff_storage_unit_id
+        INTO v_loc_id, v_su_id
+        FROM fn_resolve_box_container(NEW.box_id);
+        NEW.location_id := v_loc_id;
+        NEW.storage_unit_id := v_su_id;
+    ELSIF NEW.storage_unit_id IS NOT NULL THEN
+        SELECT location_id INTO v_loc_id
+        FROM storage_units
+        WHERE id = NEW.storage_unit_id;
+        NEW.location_id := v_loc_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_resolve_leaf_location_assets ON assets;
+CREATE TRIGGER trg_resolve_leaf_location_assets
+BEFORE INSERT OR UPDATE OF box_id, storage_unit_id ON assets
+FOR EACH ROW EXECUTE FUNCTION fn_resolve_leaf_location();
+
+DROP TRIGGER IF EXISTS trg_resolve_leaf_location_stock_items ON stock_items;
+CREATE TRIGGER trg_resolve_leaf_location_stock_items
+BEFORE INSERT OR UPDATE OF box_id, storage_unit_id ON stock_items
+FOR EACH ROW EXECUTE FUNCTION fn_resolve_leaf_location();
+
+DROP TRIGGER IF EXISTS trg_resolve_leaf_location_consumables ON consumables;
+CREATE TRIGGER trg_resolve_leaf_location_consumables
+BEFORE INSERT OR UPDATE OF box_id, storage_unit_id ON consumables
+FOR EACH ROW EXECUTE FUNCTION fn_resolve_leaf_location();
+
+DROP TRIGGER IF EXISTS trg_resolve_leaf_location_accessories ON accessories;
+CREATE TRIGGER trg_resolve_leaf_location_accessories
+BEFORE INSERT OR UPDATE OF box_id, storage_unit_id ON accessories
+FOR EACH ROW EXECUTE FUNCTION fn_resolve_leaf_location();
+
+-- 3. AFTER UPDATE on boxes -> cascade to all descendant boxes' leaf items
+CREATE OR REPLACE FUNCTION fn_cascade_box_location()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_loc_id UUID;
+    v_su_id UUID;
+BEGIN
+    SELECT eff_location_id, eff_storage_unit_id
+    INTO v_loc_id, v_su_id
+    FROM fn_resolve_box_container(NEW.id);
+
+    WITH RECURSIVE desc_boxes AS (
+        SELECT id, status FROM boxes WHERE id = NEW.id AND deleted_at IS NULL
+        UNION ALL
+        SELECT b.id, b.status
+        FROM boxes b
+        JOIN desc_boxes db ON b.parent_box_id = db.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE assets SET location_id = v_loc_id, storage_unit_id = v_su_id
+    WHERE box_id IN (SELECT id FROM desc_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE desc_boxes AS (
+        SELECT id, status FROM boxes WHERE id = NEW.id AND deleted_at IS NULL
+        UNION ALL
+        SELECT b.id, b.status
+        FROM boxes b
+        JOIN desc_boxes db ON b.parent_box_id = db.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE stock_items SET location_id = v_loc_id, storage_unit_id = v_su_id
+    WHERE box_id IN (SELECT id FROM desc_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE desc_boxes AS (
+        SELECT id, status FROM boxes WHERE id = NEW.id AND deleted_at IS NULL
+        UNION ALL
+        SELECT b.id, b.status
+        FROM boxes b
+        JOIN desc_boxes db ON b.parent_box_id = db.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE consumables SET location_id = v_loc_id, storage_unit_id = v_su_id
+    WHERE box_id IN (SELECT id FROM desc_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE desc_boxes AS (
+        SELECT id, status FROM boxes WHERE id = NEW.id AND deleted_at IS NULL
+        UNION ALL
+        SELECT b.id, b.status
+        FROM boxes b
+        JOIN desc_boxes db ON b.parent_box_id = db.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE accessories SET location_id = v_loc_id, storage_unit_id = v_su_id
+    WHERE box_id IN (SELECT id FROM desc_boxes) AND deleted_at IS NULL;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_cascade_box_location ON boxes;
+CREATE TRIGGER trg_cascade_box_location
+AFTER UPDATE OF location_id, storage_unit_id, parent_box_id, status ON boxes
+FOR EACH ROW
+WHEN (
+    OLD.location_id IS DISTINCT FROM NEW.location_id OR
+    OLD.storage_unit_id IS DISTINCT FROM NEW.storage_unit_id OR
+    OLD.parent_box_id IS DISTINCT FROM NEW.parent_box_id OR
+    OLD.status IS DISTINCT FROM NEW.status
+)
+EXECUTE FUNCTION fn_cascade_box_location();
+
+-- 4. AFTER UPDATE on storage_units -> cascade location_id to child units, boxes, and leaf items
+CREATE OR REPLACE FUNCTION fn_cascade_storage_unit_location()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Cascade to direct child storage units (which will recursively fire if needed)
+    UPDATE storage_units
+    SET location_id = NEW.location_id
+    WHERE parent_storage_unit_id = NEW.id
+      AND location_id IS DISTINCT FROM NEW.location_id
+      AND deleted_at IS NULL;
+
+    -- Update leaf items directly in this storage unit (not in a box)
+    UPDATE assets SET location_id = NEW.location_id
+    WHERE storage_unit_id = NEW.id AND box_id IS NULL AND deleted_at IS NULL;
+
+    UPDATE stock_items SET location_id = NEW.location_id
+    WHERE storage_unit_id = NEW.id AND box_id IS NULL AND deleted_at IS NULL;
+
+    UPDATE consumables SET location_id = NEW.location_id
+    WHERE storage_unit_id = NEW.id AND box_id IS NULL AND deleted_at IS NULL;
+
+    UPDATE accessories SET location_id = NEW.location_id
+    WHERE storage_unit_id = NEW.id AND box_id IS NULL AND deleted_at IS NULL;
+
+    -- Update leaf items in boxes (and descendant boxes) stored in this storage unit
+    WITH RECURSIVE su_boxes AS (
+        SELECT id FROM boxes
+        WHERE storage_unit_id = NEW.id AND deleted_at IS NULL AND status != 'in_transit'
+        UNION ALL
+        SELECT b.id FROM boxes b
+        JOIN su_boxes sb ON b.parent_box_id = sb.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE assets SET location_id = NEW.location_id
+    WHERE box_id IN (SELECT id FROM su_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE su_boxes AS (
+        SELECT id FROM boxes
+        WHERE storage_unit_id = NEW.id AND deleted_at IS NULL AND status != 'in_transit'
+        UNION ALL
+        SELECT b.id FROM boxes b
+        JOIN su_boxes sb ON b.parent_box_id = sb.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE stock_items SET location_id = NEW.location_id
+    WHERE box_id IN (SELECT id FROM su_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE su_boxes AS (
+        SELECT id FROM boxes
+        WHERE storage_unit_id = NEW.id AND deleted_at IS NULL AND status != 'in_transit'
+        UNION ALL
+        SELECT b.id FROM boxes b
+        JOIN su_boxes sb ON b.parent_box_id = sb.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE consumables SET location_id = NEW.location_id
+    WHERE box_id IN (SELECT id FROM su_boxes) AND deleted_at IS NULL;
+
+    WITH RECURSIVE su_boxes AS (
+        SELECT id FROM boxes
+        WHERE storage_unit_id = NEW.id AND deleted_at IS NULL AND status != 'in_transit'
+        UNION ALL
+        SELECT b.id FROM boxes b
+        JOIN su_boxes sb ON b.parent_box_id = sb.id
+        WHERE b.deleted_at IS NULL AND b.status != 'in_transit'
+    )
+    UPDATE accessories SET location_id = NEW.location_id
+    WHERE box_id IN (SELECT id FROM su_boxes) AND deleted_at IS NULL;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_cascade_storage_unit_location ON storage_units;
+CREATE TRIGGER trg_cascade_storage_unit_location
+AFTER UPDATE OF location_id ON storage_units
+FOR EACH ROW
+WHEN (OLD.location_id IS DISTINCT FROM NEW.location_id)
+EXECUTE FUNCTION fn_cascade_storage_unit_location();
+"""
+
 
 def ensure_schema():
-    """Ensure extensions, missing tables, and views exist without dropping data."""
+    """Ensure extensions, missing tables, views, and location triggers exist without dropping data."""
     import psycopg2
     from sqlalchemy import create_engine
     import app.models
@@ -100,11 +334,12 @@ def ensure_schema():
     conn.autocommit = True
     cur = conn.cursor()
     cur.execute(SHARED_DESK_VIEW_SQL)
+    cur.execute(LOCATION_TRIGGERS_SQL)
     cur.close()
     if not get_schema_version(conn):
         set_schema_version(conn, APP_VERSION)
     conn.close()
-    print(f"✓ Schema ensured ({len(Base.metadata.tables)} tables + views).", file=sys.stderr)
+    print(f"✓ Schema ensured ({len(Base.metadata.tables)} tables + views + triggers).", file=sys.stderr)
 
 
 def reset_db():
@@ -145,11 +380,12 @@ def reset_db():
     table_count = len(Base.metadata.tables)
     print(f"Created {table_count} tables from models.", file=sys.stderr)
 
-    # Create views
+    # Create views and triggers
     conn = psycopg2.connect(url)
     conn.autocommit = True
     cur = conn.cursor()
     cur.execute(SHARED_DESK_VIEW_SQL)
+    cur.execute(LOCATION_TRIGGERS_SQL)
     cur.close()
     conn.close()
 
@@ -184,6 +420,7 @@ def main():
     parser.add_argument("--show-version", action="store_true", help="Show current schema version")
     parser.add_argument("--ensure-schema", action="store_true", help="Create missing tables/views idempotently")
     parser.add_argument("--reset", action="store_true", help="Drop all, create_all from models, seed, set version")
+    parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt when applying SQL")
     args = parser.parse_args()
 
     if args.ensure_schema:
@@ -245,11 +482,12 @@ def main():
         print(f"  ... ({len(lines) - 20} more lines)", file=sys.stderr)
 
     print(file=sys.stderr)
-    confirm = input("Apply? [y/N]: ")
-    if confirm.strip().lower() not in ("y", "yes"):
-        print("Aborted.", file=sys.stderr)
-        conn.close()
-        return
+    if not args.yes:
+        confirm = input("Apply? [y/N]: ")
+        if confirm.strip().lower() not in ("y", "yes"):
+            print("Aborted.", file=sys.stderr)
+            conn.close()
+            return
 
     try:
         apply_sql(conn, sql)

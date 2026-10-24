@@ -8,8 +8,8 @@ import { EditLocationModal, AddEntityModal } from '../components/EditModals';
 import { ScannerPlacementModal } from '../components/ScannerModal';
 
 import type { Asset, TreeNodeData } from '../types';
-import type { PagedResponse, LocationResponse } from '../types/api';
-import { useApiQuery } from '../hooks/useApi';
+import type { PagedResponse, CursorPagedResponse, LocationResponse, AssetResponse } from '../types/api';
+import { useApiQuery, useApiMutation } from '../hooks/useApi';
 
 /* ─── StorageUnitAssetList (inline, only used here) ──────────────────── */
 
@@ -88,10 +88,17 @@ interface LocationsViewProps {
 
 export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {}) {
   const [locTree, setLocTree] = useState<TreeNodeData[]>([]);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>('loc-hq-f1-r101');
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch locations from API
-  const { data: locsData } = useApiQuery<PagedResponse<LocationResponse>>('/locations/?limit=200');
+  // Fetch locations and assets from API
+  const { data: locsData, refetch: refetchLocations } = useApiQuery<PagedResponse<LocationResponse>>('/locations/?limit=200');
+  const { data: apiAssetsData } = useApiQuery<CursorPagedResponse<AssetResponse>>('/assets/?limit=200', { skip: assets.length > 0 });
+
+  const createLocationMutation = useApiMutation<Record<string, any>, LocationResponse>('/locations/', 'POST');
+  const updateLocationMutation = useApiMutation<Record<string, any>, LocationResponse>('/locations/', 'PUT');
+  const deleteLocationMutation = useApiMutation<void, void>('/locations/', 'DELETE');
+  const createStorageUnitMutation = useApiMutation<Record<string, any>, any>('/storage-units/', 'POST');
 
   useEffect(() => {
     if (!locsData?.items || locsData.items.length === 0) return;
@@ -110,7 +117,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
       }
     }
     setLocTree(roots);
-    if (roots.length > 0) setSelectedLocationId(null);
+    setSelectedLocationId(prev => (prev && nodeMap.has(prev) ? prev : (roots[0]?.id ?? null)));
   }, [locsData]);
   const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
   const [locationPanelWidth, setLocationPanelWidth] = useState(320);
@@ -130,7 +137,70 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
 
   // We keep a local copy so shelf drag-drop can update locId
   const [localAssets, setLocalAssets] = useState<Asset[]>(assets);
-  useEffect(() => { setLocalAssets(assets); }, [assets]);
+  useEffect(() => {
+    if (assets.length > 0) {
+      setLocalAssets(assets);
+    } else if (apiAssetsData?.items) {
+      setLocalAssets(
+        apiAssetsData.items.map(a => ({
+          id: a.id,
+          inventoryNumber: a.inventory_number ?? a.serial_number ?? a.id.slice(0, 8),
+          serialNumber: a.serial_number ?? '',
+          name: a.name ?? 'Unnamed Asset',
+          type: a.mobility_type ?? 'Asset',
+          status: a.status === 'active' ? 'Active' : a.status === 'in_stock' ? 'Storage' : a.status === 'in_service' ? 'In Repair' : a.status,
+          assignee: null,
+          locId: a.location_id ?? '',
+          orgId: a.organization_id,
+          legalEntity: a.legal_entity_id ?? '',
+        }))
+      );
+    }
+  }, [assets, apiAssetsData]);
+
+  // Compute all descendant location IDs for the currently selected node
+  const selectedSubtreeIds = useMemo(() => {
+    if (!selectedLocationId) return new Set<string>();
+    const ids = new Set<string>([selectedLocationId]);
+    const findAndCollect = (nodes: TreeNodeData[], collect: boolean) => {
+      for (const n of nodes) {
+        const isMatch = collect || n.id === selectedLocationId;
+        if (isMatch) ids.add(n.id);
+        if (n.children && n.children.length > 0) {
+          findAndCollect(n.children, isMatch);
+        }
+      }
+    };
+    findAndCollect(locTree, false);
+    return ids;
+  }, [selectedLocationId, locTree]);
+
+  const filteredLocationAssets = useMemo(() => {
+    const byLoc = selectedSubtreeIds.size > 0
+      ? localAssets.filter(a => selectedSubtreeIds.has(a.locId))
+      : localAssets;
+    const list = byLoc.length > 0 ? byLoc : localAssets.slice(0, 15);
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(
+      a => a.name.toLowerCase().includes(q) || a.inventoryNumber.toLowerCase().includes(q)
+    );
+  }, [localAssets, selectedSubtreeIds, searchQuery]);
+
+  const selectedLocationName = useMemo(() => {
+    if (!selectedLocationId) return '';
+    const findNode = (nodes: TreeNodeData[]): TreeNodeData | null => {
+      for (const node of nodes) {
+        if (node.id === selectedLocationId) return node;
+        if (node.children) {
+          const found = findNode(node.children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return findNode(locTree)?.label || '';
+  }, [selectedLocationId, locTree]);
 
   const startLocationPanelResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -324,6 +394,8 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search assets in this location..."
                         className="pl-9 pr-4 py-2 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-0 rounded-lg text-sm w-64 transition-all"
                       />
@@ -566,7 +638,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {localAssets.slice(0, 8).map(asset => (
+                          {filteredLocationAssets.map(asset => (
                             <tr key={asset.id} className="hover:bg-slate-50 transition-colors cursor-pointer group">
                               <td className="px-6 py-4 font-mono text-xs text-blue-600 font-bold">{asset.inventoryNumber}</td>
                               <td className="px-6 py-4 font-bold text-slate-900">{asset.name}</td>
@@ -678,33 +750,57 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
         isOpen={isEditLocationOpen}
         onClose={() => setIsEditLocationOpen(false)}
         locationId={selectedLocationId}
-        onSave={(id, data) => {
-          console.log('Saved location', id, data);
+        initialName={selectedLocationName}
+        onSave={async (id, data) => {
+          try {
+            await updateLocationMutation.mutate(
+              { name: data.name, location_type: data.type?.toLowerCase() },
+              `/locations/${id}`
+            );
+            refetchLocations();
+          } catch (err) {
+            console.error('Failed to update location:', err);
+          }
+        }}
+        onDelete={async (id) => {
+          try {
+            await deleteLocationMutation.mutate(undefined, `/locations/${id}`);
+            setSelectedLocationId(null);
+            refetchLocations();
+          } catch (err) {
+            console.error('Failed to delete location:', err);
+          }
         }}
       />
       <AddEntityModal
         isOpen={isAddEntityOpen}
         onClose={() => setIsAddEntityOpen(false)}
         parentId={addEntityParentId}
-        onSave={(parentId, data) => {
-          console.log('Adding entity to', parentId, data);
-          const newId = `${parentId === 'root' ? 'loc' : parentId}-${data.entityType.toLowerCase()}-${Date.now().toString().slice(-4)}`;
-          if (parentId === 'root') {
-            setLocTree(prevTree => [...prevTree, { id: newId, label: data.name }]);
-            return;
+        onSave={async (parentId, data) => {
+          try {
+            if (data.entityType === 'Storage Unit' && parentId !== 'root') {
+              await createStorageUnitMutation.mutate({
+                name: data.name,
+                type: (data.storageType || 'cabinet').toLowerCase(),
+                location_id: parentId,
+                security_level: data.securityLevel || 1,
+                is_lockable: (data.securityLevel || 1) >= 2,
+              });
+            } else {
+              const created = await createLocationMutation.mutate({
+                name: data.name,
+                location_type: (data.locationType || 'room').toLowerCase(),
+                parent_id: parentId === 'root' ? null : parentId,
+                is_active: true,
+              });
+              if (created?.id) {
+                setSelectedLocationId(created.id);
+              }
+            }
+            refetchLocations();
+          } catch (err) {
+            console.error('Failed to create location/entity:', err);
           }
-          const addNodeToTree = (nodes: TreeNodeData[]): TreeNodeData[] => {
-            return nodes.map(node => {
-              if (node.id === parentId) {
-                return { ...node, children: [...(node.children || []), { id: newId, label: data.name }] };
-              }
-              if (node.children) {
-                return { ...node, children: addNodeToTree(node.children) };
-              }
-              return node;
-            });
-          };
-          setLocTree(prevTree => addNodeToTree(prevTree));
         }}
       />
       <ScannerPlacementModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />

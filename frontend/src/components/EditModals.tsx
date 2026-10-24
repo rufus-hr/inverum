@@ -5,10 +5,12 @@ interface EditLocationModalProps {
   isOpen: boolean;
   onClose: () => void;
   locationId: string | null;
+  initialName?: string;
   onSave: (id: string, data: any) => void;
+  onDelete?: (id: string) => void;
 }
 
-export function EditLocationModal({ isOpen, onClose, locationId, onSave }: EditLocationModalProps) {
+export function EditLocationModal({ isOpen, onClose, locationId, initialName, onSave, onDelete }: EditLocationModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState('Room');
@@ -17,8 +19,7 @@ export function EditLocationModal({ isOpen, onClose, locationId, onSave }: EditL
 
   useEffect(() => {
     if (isOpen && locationId) {
-      // In a real app, fetch location details. For now, mock it.
-      setName(`Location ${locationId}`);
+      setName(initialName || `Location ${locationId}`);
       setDescription('A description for this location.');
       
       if (locationId.startsWith('cab') || locationId.startsWith('safe') || locationId.startsWith('shelf')) {
@@ -154,6 +155,17 @@ export function EditLocationModal({ isOpen, onClose, locationId, onSave }: EditL
         </div>
         
         <div className="p-6 border-t border-slate-100 bg-white shrink-0 flex gap-3">
+          {onDelete && locationId && (
+            <button
+              onClick={() => {
+                onDelete(locationId);
+                onClose();
+              }}
+              className="px-4 py-2.5 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+            >
+              Delete
+            </button>
+          )}
           <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
             Cancel
           </button>

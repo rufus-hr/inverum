@@ -26,6 +26,7 @@ router = APIRouter(prefix="/asset-assignments", tags=["asset-assignments"])
 @router.get("/", response_model=PagedResponse[AssetAssignmentResponse])
 def list_assignments(
     asset_id: uuid.UUID | None = None,
+    assigned_to_id: uuid.UUID | None = None,
     is_active: bool | None = None,
     pagination: PaginationParams = Depends(PaginationParams),
     user: User = Depends(require_permission("asset_assignment:read")),
@@ -34,6 +35,8 @@ def list_assignments(
     q = db.query(AssetAssignment).filter(AssetAssignment.tenant_id == user.tenant_id)
     if asset_id is not None:
         q = q.filter(AssetAssignment.asset_id == asset_id)
+    if assigned_to_id is not None:
+        q = q.filter(AssetAssignment.assigned_to_id == assigned_to_id)
     if is_active is not None:
         q = q.filter(AssetAssignment.is_active == is_active)
     total = q.count()

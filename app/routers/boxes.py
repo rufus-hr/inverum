@@ -19,9 +19,12 @@ def list_boxes(
     user: User = Depends(require_permission("box:read")),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Box).filter(Box.tenant_id == user.tenant_id)
+    query = db.query(Box).filter(
+        Box.tenant_id == user.tenant_id,
+        Box.deleted_at.is_(None),
+    )
     total = query.count()
-    items = query.offset(pagination.offset).limit(pagination.limit).all()
+    items = query.order_by(Box.inventory_number).offset(pagination.offset).limit(pagination.limit).all()
     pages = (total + pagination.limit - 1) // pagination.limit
     return PagedResponse(items=items, total=total, page=pagination.page,
                          limit=pagination.limit, pages=pages)
@@ -59,7 +62,7 @@ def update_box(
     user: User = Depends(require_permission("box:write")),
     db: Session = Depends(get_db),
 ):
-    b = db.query(Box).filter(Box.id == box_id, Box.tenant_id == user.tenant_id).first()
+    b = db.query(Box).filter(Box.id == box_id, Box.tenant_id == user.tenant_id, Box.deleted_at.is_(None)).first()
     if not b:
         raise HTTPException(status_code=404, detail="Box not found")
     for field, value in data.model_dump(exclude_unset=True).items():
@@ -67,3 +70,16 @@ def update_box(
     db.commit()
     db.refresh(b)
     return b
+
+
+@router.delete("/{box_id}", status_code=204)
+def delete_box(
+    box_id: uuid.UUID,
+    user: User = Depends(require_permission("box:write")),
+    db: Session = Depends(get_db),
+):
+    b = db.query(Box).filter(Box.id == box_id, Box.tenant_id == user.tenant_id, Box.deleted_at.is_(None)).first()
+    if not b:
+        raise HTTPException(status_code=404, detail="Box not found")
+    b.deleted_at = datetime.now(timezone.utc)
+    db.commit()
