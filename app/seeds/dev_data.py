@@ -1283,31 +1283,43 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
     from app.models.checklist_item import ChecklistItem
 
     templates_data = [
-        ("User Onboarding", "asset_stock_to_assigned", None, "per_event", True, False, [
-            ("Provjeri serijski broj", True, False, None),
-            ("Instaliraj standardni softver", True, False, None),
-            ("Konfiguriraj korisnički račun i email", True, False, None),
-            ("Testiraj mrežnu povezivost", False, False, None),
-            ("Predaj zaposleniku i prikupi potpis", True, True, None),
+        ("ISO A.8.1 & A.5.10 — User Onboarding & Endpoint Hardening", "asset_stock_to_assigned", None, "per_event", True, False, [
+            ("Aktiviraj Full-Disk Encryption (BitLocker / FileVault / LUKS) i spremi recovery ključ (ISO A.8.24 / GDPR Čl. 32)", True, True, None),
+            ("Instaliraj EDR / MDM agent i provjeri javljanje na sigurnosnu konzolu (ISO A.8.7)", True, False, None),
+            ("Ukloni lokalna administratorska prava za standardnog korisnika (ISO A.8.2 Least Privilege)", True, False, None),
+            ("Ažuriraj OS i BIOS/firmware na zadnju podržanu verziju (ISO A.8.8 / NIS2 Čl. 21.2.e)", True, False, None),
+            ("Generiraj i potpiši Zapisnik o zaduženju opreme (Revers) i AUP izjavu (ISO A.5.10)", True, True, None),
         ]),
-        ("User Offboarding", "asset_assigned_to_stock", None, "per_event", True, True, [
-            ("Backup korisničkih podataka na mrežni disk", True, False, None),
-            ("Obriši lokalni storage (NIST 800-88)", True, True, None),
-            ("Ukloni inventurne naljepnice", False, False, None),
-            ("Vrati na skladišnu policu i ažuriraj lokaciju", True, False, None),
+        ("ISO A.7.14 & GDPR Čl. 5.1(f) — Reassignment Sanitizacija (Korisnik A -> Korisnik B)", "asset_reassignment_sanitization", None, "per_event", True, True, [
+            ("Fizički pregled vraćenog uređaja i razduženje s prethodnog korisnika (ISO A.5.11)", True, False, None),
+            ("Arhiviraj poslovne podatke prethodnog korisnika uz odobrenje voditelja (GDPR Čl. 5)", True, False, None),
+            ("Izvrši kriptografski wipe / čisti re-image OS-a i rotiraj FDE ključeve (NIST 800-88 Clear)", True, True, None),
+            ("Provjeri odjavu iz Apple ID / Entra ID / Google Activation Lock računa", True, False, None),
+            ("4-Eyes potvrda drugog tehničara da na uređaju nema zaostalih osobnih podataka", True, True, None),
         ]),
-        ("EOL Decommission", "asset_retired", None, "per_event", True, True, [
-            ("Dokumentiraj stanje asseta s fotografijama", True, True, None),
-            ("Kriptografsko brisanje podataka", True, True, None),
-            ("Ukloni iz svih monitoring sustava", True, False, None),
-            ("Ukloni inventurnu oznaku", False, False, None),
-            ("Pakiraj za odvoz dobavljaču", True, False, None),
-            ("Generiraj certifikat o zbrinjavanju", True, False, None),
+        ("ISO A.6.5 & A.5.11 — User Offboarding & Revocation", "asset_assigned_to_stock", None, "per_event", True, True, [
+            ("Preuzmi svu glavnu opremu (laptop, mobitel, monitor) i provjeri serijske brojeve", True, False, None),
+            ("Preuzmi pristupne kartice (RFID badge), ključeve ureda/ormara i YubiKey/MFA tokene", True, True, None),
+            ("Deaktiviraj AD / SSO račun i opozovi korisničke certifikate (ISO A.5.18)", True, False, None),
+            ("Obriši lokalni storage (NIST SP 800-88 Purge) i upiši serijski broj verifikacije", True, True, None),
+            ("Izgeneriraj potpisanu Izjavu o razduženju za HR / Kadrovsku službu", True, False, None),
         ]),
-        ("Preventivno održavanje", "asset_to_service", None, "per_event", False, False, [
-            ("Provjeri verziju firmwarea i ažuriraj", False, True, None),
-            ("Očisti filtre prašine i ventilatore", False, False, None),
-            ("Pokreni dijagnostičke testove", False, True, None),
+        ("ISO A.7.14 & A.8.10 — EOL Rashod i Sigurno Uništenje Podataka (4-Eyes)", "asset_retired", None, "per_event", True, True, [
+            ("Upiši formalni razlog rashoda i tehnički nalaz neispravnosti / zastarjelosti", True, True, None),
+            ("Izvrši NIST SP 800-88 Purge ili fizičko uništenje diska (Shredding / Degaussing)", True, True, None),
+            ("Ukloni iz AD-a, MDM-a, Zabbix monitoringa i obriši mrežne certifikate", True, False, None),
+            ("Ukloni sve inventarne naljepnice i oznake organizacije s kućišta (ISO A.5.13)", True, False, None),
+            ("4-Eyes potvrda i generiranje PAdES-B-LTA Certifikata o uništenju podataka", True, True, None),
+        ]),
+        ("ISO A.7.9 & GDPR Čl. 28 — Slanje opreme na vanjski servis", "asset_to_service", None, "per_event", True, False, [
+            ("Provjeri ima li serviser (Vendor) važeći ugovor i potpisan NDA/DPA (ISO A.5.19)", True, False, None),
+            ("Izvadi SSD/NVMe disk ili potvrdi da je disk FDE kriptiran i potpuno ugašen", True, True, None),
+            ("Evidentiraj vanjski RMA / broj radnog naloga servisera", True, True, None),
+        ]),
+        ("ISO A.7.10 — Transport kutije i provjera sigurnosne plombe (Chain of Custody)", "box_in_transit", None, "per_event", True, False, [
+            ("Provjeri popis svih spakiranih asseta i zaliha u kutiji", True, False, None),
+            ("Postavi sigurnosnu plombu (Tamper-evident seal) i upiši serijski broj plombe", True, True, None),
+            ("Ispiši i zalijepi 100x50mm Chain of Custody naljepnicu s QR kodom", True, False, None),
         ]),
     ]
 
@@ -1366,12 +1378,115 @@ def seed_dev_data(db: Session, tenant_id: uuid.UUID, admin_user_id: uuid.UUID) -
     db.flush()
     logger.info("Phase 15: created %d maintenance schedules", len(schedules))
 
+    # -------------------------------------------------------------------
+    # PHASE 16: Out-of-the-Box ISO 27001 / NIS2 / GDPR DocumentTemplates
+    # -------------------------------------------------------------------
+    from app.models.document_template import DocumentTemplate
+
+    doc_templates_seed = [
+        (
+            "sticker_62x29.svg — Termo naljepnica za imovinu (ISO A.5.13)",
+            "sticker",
+            "svg",
+            False,
+            """<svg xmlns="http://www.w3.org/2000/svg" width="62mm" height="29mm" viewBox="0 0 620 290">
+  <rect x="2" y="2" width="616" height="286" rx="10" fill="#ffffff" stroke="#0f172a" stroke-width="4"/>
+  <rect x="2" y="2" width="616" height="44" rx="8" fill="#0f172a"/>
+  <text x="18" y="30" font-family="sans-serif" font-size="20" font-weight="bold" fill="#ffffff">{{ tenant_name }}</text>
+  <text x="520" y="28" text-anchor="middle" font-family="monospace" font-size="16" font-weight="bold" fill="#f8fafc">{{ classification }}</text>
+  <g transform="translate(14, 56)">{{ qrcode_svg }}</g>
+  <text x="235" y="84" font-family="sans-serif" font-size="21" font-weight="bold" fill="#0f172a">{{ asset_name }}</text>
+  <text x="235" y="114" font-family="monospace" font-size="22" font-weight="bold" fill="#1d4ed8">{{ inventory_number }}</text>
+  <text x="235" y="142" font-family="sans-serif" font-size="16" fill="#475569">LOC: {{ location_name }}</text>
+  <g transform="translate(230, 155)">{{ barcode_svg }}</g>
+  <text x="410" y="274" text-anchor="middle" font-family="monospace" font-size="13" fill="#64748b">ISO 27001 A.5.13 · INVERUM ASSET TAG</text>
+</svg>""",
+        ),
+        (
+            "handover_revers_hr.typ — Zapisnik o primopredaji opreme (ISO A.5.10 / A.5.11)",
+            "handover",
+            "typst",
+            True,
+            """// ISO/IEC 27001:2022 A.5.10 & A.5.11 — Zapisnik o primopredaji informacijske imovine
+= ZAPISNIK O PRIMOPREDAJI OPREME (REVERS)
+*Organizacija:* {{ tenant_name }}
+*Zaposlenik / Zadužitelj:* {{ employee_name }}
+*Imovina:* {{ asset_name }} ({{ inventory_number }})
+*Klasifikacija:* {{ classification }} | *Lokacija:* {{ location_name }}
+*PAdES-B-LTA Kriptografski potpis:* Da (eIDAS / RFC 3161 TSA)
+""",
+        ),
+        (
+            "sanitization_reuse_cert.typ — Potvrda o sanitizaciji pri prijenosu (ISO A.7.14 / GDPR Čl. 5.1.f)",
+            "return",
+            "typst",
+            True,
+            """// ISO/IEC 27001:2022 A.7.14 & GDPR Art. 5(1)(f) — Equipment Re-use Sanitization Record
+= POTVRDA O SANITIZACIJI UREĐAJA ZA PONOVNU UPOTREBU
+*Imovina:* {{ asset_name }} ({{ inventory_number }})
+*Metoda brisanja:* NIST SP 800-88 Clear / OS Re-image & FDE Key Rotation
+*Status 4-Eyes potvrde:* Potvrđeno
+""",
+        ),
+        (
+            "decommission_destruction_cert.typ — Certifikat o brisanju i rashodu (ISO A.7.14 / A.8.10)",
+            "work_order",
+            "typst",
+            True,
+            """// ISO/IEC 27001:2022 A.7.14 & A.8.10 — Certificate of Data Destruction & Decommissioning
+= CERTIFIKAT O SIGURNOM BRISANJU PODATAKA I RASHODU
+*Imovina:* {{ asset_name }} ({{ inventory_number }})
+*Standard:* NIST SP 800-88 Rev. 1 Purge / Destroy (4-Eyes Verified)
+""",
+        ),
+        (
+            "box_custody_manifest.typ — Chain of Custody & Tamper-Seal Manifest (ISO A.7.10)",
+            "shipping_manifest",
+            "typst",
+            True,
+            """// ISO/IEC 27001:2022 A.7.10 — Physical Storage Media Transport & Tamper-Seal Manifest
+= TRANSPORTNI MANIFEST I LANAC NADZORA (CHAIN OF CUSTODY)
+*Kutija:* {{ inventory_number }}
+*Lokacija:* {{ location_name }}
+""",
+        ),
+        (
+            "inventory_audit_report.typ — Izvještaj inventure i usklađenosti (ISO A.5.9 / NIS2 Čl. 21)",
+            "audit_report",
+            "typst",
+            True,
+            """// ISO/IEC 27001:2022 A.5.9 & NIS2 Art. 21 — Register of Assets & Physical Inventory Audit
+= IZVJEŠTAJ O INVENTURI I USKLAĐENOSTI IMOVINE
+*Organizacija:* {{ tenant_name }}
+*Lokacija:* {{ location_name }}
+""",
+        ),
+    ]
+
+    seeded_doc_templates = []
+    for dname, dtype, dengine, req_sig, dcontent in doc_templates_seed:
+        dt = DocumentTemplate(
+            id=uuid.uuid7(),
+            tenant_id=tenant_id,
+            name=dname,
+            template_type=dtype,
+            engine=dengine,
+            content=dcontent,
+            requires_signature=req_sig,
+            is_system=True,
+            is_active=True,
+        )
+        seeded_doc_templates.append(dt)
+    db.add_all(seeded_doc_templates)
+    db.flush()
+    logger.info("Phase 16: created %d system document templates", len(seeded_doc_templates))
+
     logger.info(
         "Dev data seeding complete: %d locations, %d employees, %d assets, "
         "%d identifiers, %d vendors, %d boxes, %d assignments, "
-        "%d warranties, %d work orders, %d supplies, %d checklists, %d schedules",
+        "%d warranties, %d work orders, %d supplies, %d checklists, %d schedules, %d doc_templates",
         len(all_locations), len(employees), len(assets),
         len(identifiers), len(vendors), len(boxes), len(assignments),
         len(warranties), len(work_orders), len(supplies),
-        len(chk_templates), len(schedules),
+        len(chk_templates), len(schedules), len(seeded_doc_templates),
     )

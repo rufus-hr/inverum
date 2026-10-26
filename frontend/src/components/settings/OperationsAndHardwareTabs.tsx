@@ -204,17 +204,20 @@ export function PrintingTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Reports Tab
+// Reports Tab — 16 ISO/IEC 27001:2022, NIS2 (ZKS) & GDPR Periodic Reports
 // ---------------------------------------------------------------------------
 
 type ReportFormat   = 'PDF' | 'CSV' | 'XLSX';
-type ReportSchedule = 'on_demand' | 'daily' | 'weekly' | 'monthly' | 'quarterly';
+type ReportSchedule = 'on_demand' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 interface ReportTemplate { id: string; name: string; isDefault: boolean; }
 interface ReportDefinition {
   id: string;
   name: string;
   category: string;
+  isoControl?: string;
+  nis2Ref?: string;
+  gdprRef?: string;
   description: string;
   schedule: ReportSchedule;
   format: ReportFormat;
@@ -223,53 +226,147 @@ interface ReportDefinition {
   recipients: string;
   enabled: boolean;
   lastRun: string | null;
+  lastHash?: string | null;
 }
 
 const SCHEDULE_LABELS: Record<ReportSchedule, string> = {
-  on_demand: 'On demand', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly',
+  on_demand: 'On demand', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly',
 };
 
 const INITIAL_REPORTS: ReportDefinition[] = [
   {
-    id: 'r1', name: 'Asset Inventory', category: 'Assets',
-    description: 'Full list of all assets with current status, location, and assigned employee.',
-    schedule: 'monthly', format: 'XLSX', enabled: true, lastRun: '2026-04-01 03:00',
-    templates: [{ id: 't1', name: 'Default — Asset Inventory', isDefault: true }],
-    activeTemplateId: 't1', recipients: 'it-admin@posta.hr',
+    id: 'iso_a5_9_roa', name: 'ISO A.5.9 & A.5.12 — Register of Assets & Classification (RoA)', category: 'Assets',
+    isoControl: 'ISO 27001 A.5.9, A.5.12', nis2Ref: 'NIS2 Art. 21.2(a),(i)', gdprRef: 'GDPR Art. 30',
+    description: 'Cjeloviti registar aktivne imovine po klasifikaciji (PUBLIC/INTERNAL/CONFIDENTIAL/SECRET), vlasništvu i lokaciji, uz detekciju imovine bez vlasnika.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't1', name: 'PAdES-B-LTA — ISO A.5.9 RoA Template', isDefault: true }],
+    activeTemplateId: 't1', recipients: 'ciso@posta.hr, it-admin@posta.hr',
   },
   {
-    id: 'r2', name: 'Asset Lifecycle', category: 'Assets',
-    description: 'Assets approaching end-of-life based on warranty expiry and purchase date.',
-    schedule: 'quarterly', format: 'PDF', enabled: true, lastRun: '2026-01-01 03:00',
-    templates: [{ id: 't2', name: 'Default — Asset Lifecycle', isDefault: true }],
-    activeTemplateId: 't2', recipients: '',
+    id: 'iso_a5_10_handover', name: 'ISO A.5.10 & A.5.11 — Handover, Return & Signed Reversi', category: 'HR & Endpoints',
+    isoControl: 'ISO 27001 A.5.10, A.5.11', nis2Ref: 'NIS2 Art. 21.2(i)', gdprRef: 'GDPR Art. 32.4',
+    description: 'Mjesečni pregled svih aktivnih zaduženja opreme (AssetAssignment), vraćene opreme i provjera jesu li sva zaduženja pokrivena PAdES potpisanim reversom.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't2', name: 'PAdES-B-LTA — Handover & Return Audit', isDefault: true }],
+    activeTemplateId: 't2', recipients: 'hr@posta.hr, ciso@posta.hr',
   },
   {
-    id: 'r3', name: 'Work Order Summary', category: 'Maintenance',
-    description: 'Summary of completed, pending, and overdue work orders per period.',
-    schedule: 'weekly', format: 'PDF', enabled: true, lastRun: '2026-04-07 03:00',
-    templates: [{ id: 't3', name: 'Default — Work Orders', isDefault: true }],
-    activeTemplateId: 't3', recipients: 'maintenance@posta.hr',
+    id: 'iso_a5_13_labelling', name: 'ISO A.5.13 — Asset Labelling & Naming Schema Coverage', category: 'Assets',
+    isoControl: 'ISO 27001 A.5.13', nis2Ref: 'NIS2 Art. 21.2(a)', gdprRef: '—',
+    description: 'Provjera imaju li svi asseti, kutije i ormari valjani inventarni broj, serijski broj i klasifikacijsku oznaku za QR/Code128 naljepnice.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't3', name: 'Default — ISO A.5.13 Labelling Audit', isDefault: true }],
+    activeTemplateId: 't3', recipients: 'it-admin@posta.hr',
   },
   {
-    id: 'r4', name: 'Stock Level Report', category: 'Supplies',
-    description: 'Current stock levels for all supplies, flagging items below minimum threshold.',
-    schedule: 'weekly', format: 'CSV', enabled: false, lastRun: null,
-    templates: [{ id: 't4', name: 'Default — Stock Levels', isDefault: true }],
-    activeTemplateId: 't4', recipients: '',
+    id: 'iso_a5_15_access', name: 'ISO A.5.15 & A.5.18 — User Access Rights & Clearance Review (UAR)', category: 'Security & RBAC',
+    isoControl: 'ISO 27001 A.5.15, A.5.18, A.8.2', nis2Ref: 'NIS2 Art. 21.2(i),(j)', gdprRef: 'GDPR Art. 32',
+    description: 'Matrica svih aktivnih i deaktiviranih korisnika, dodijeljenih rola, 2FA/MFA statusa i provjera usklađenosti sigurnosne razine (Clearance).',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't4', name: 'PAdES-B-LTA — Access Rights Review', isDefault: true }],
+    activeTemplateId: 't4', recipients: 'ciso@posta.hr',
   },
   {
-    id: 'r5', name: 'Compliance Report', category: 'Certificates',
-    description: 'Assets and certificates with expiring or missing compliance documents.',
-    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:00',
-    templates: [{ id: 't5', name: 'Default — Compliance', isDefault: true }],
-    activeTemplateId: 't5', recipients: 'compliance@posta.hr',
+    id: 'iso_a5_19_supply_chain', name: 'ISO A.5.19–A.5.22 & NIS2 — Supply Chain Security & Vendor SLA', category: 'Supply Chain',
+    isoControl: 'ISO 27001 A.5.19–A.5.22', nis2Ref: 'NIS2 Art. 21.2(d)', gdprRef: 'GDPR Art. 28',
+    description: 'Pregled svih dobavljača (Vendor), aktivnih ugovora, SLA/MTTR metrika i ugovora koji istječu u idućih 90 dana.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't5', name: 'NIS2 Supply Chain & SLA Evaluation', isDefault: true }],
+    activeTemplateId: 't5', recipients: 'procurement@posta.hr, ciso@posta.hr',
+  },
+  {
+    id: 'iso_a5_24_incidents', name: 'ISO A.5.24 & GDPR Art. 33/34 — Lost/Stolen Assets & FDE Evidence', category: 'Security & Incidents',
+    isoControl: 'ISO 27001 A.5.24, A.5.28', nis2Ref: 'NIS2 Art. 23 (24h/72h)', gdprRef: 'GDPR Art. 33 & 34.3(a)',
+    description: 'Forenzički popis izgubljene/ukradene opreme s dokazom BitLocker/LUKS enkripcije iz SOP checklista za izuzeće po GDPR Čl. 34.',
+    schedule: 'daily', format: 'PDF', enabled: true, lastRun: '2026-04-12 05:30',
+    templates: [{ id: 't6', name: 'AZOP / CSIRT Forensic Encryption Report', isDefault: true }],
+    activeTemplateId: 't6', recipients: 'dpo@posta.hr, ciso@posta.hr',
+  },
+  {
+    id: 'iso_a6_5_offboarding', name: 'ISO A.6.5 — Offboarding & Termination Asset Recovery Audit', category: 'HR & Endpoints',
+    isoControl: 'ISO 27001 A.6.5, A.5.11', nis2Ref: 'NIS2 Art. 21.2(i)', gdprRef: 'GDPR Art. 32.4',
+    description: 'Detekcija deaktiviranih ili bivših zaposlenika koji još uvijek drže nerazduženu opremu, RFID kartice, ključeve ili tokene.',
+    schedule: 'weekly', format: 'PDF', enabled: true, lastRun: '2026-04-07 06:00',
+    templates: [{ id: 't7', name: 'Default — Offboarding Clearance Audit', isDefault: true }],
+    activeTemplateId: 't7', recipients: 'hr@posta.hr, it-admin@posta.hr',
+  },
+  {
+    id: 'iso_a7_1_physical', name: 'ISO A.7.1–A.7.8 — Physical Perimeters, Server Rooms & Rack Audit', category: 'Physical Security',
+    isoControl: 'ISO 27001 A.7.1, A.7.4, A.7.8', nis2Ref: 'NIS2 Art. 21.2(c)', gdprRef: 'GDPR Art. 32',
+    description: 'Pregled lokacija, serverskih ormara (Rack U-slot popunjenost), sefova, zaključavanja i razina fizičke zaštite (Level 1–5).',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't8', name: 'Datacenter & Physical Security Report', isDefault: true }],
+    activeTemplateId: 't8', recipients: 'facilities@posta.hr, ciso@posta.hr',
+  },
+  {
+    id: 'iso_a7_9_transit', name: 'ISO A.7.9 & A.7.10 — Off-Premises Assets & Box Custody Transit', category: 'Physical Security',
+    isoControl: 'ISO 27001 A.7.9, A.7.10, A.5.14', nis2Ref: 'NIS2 Art. 21.2(c)', gdprRef: 'GDPR Art. 28 & 32',
+    description: 'Nadzor opreme na vanjskom servisu i transportnih kutija (Box) u tranzitu s provjerom sigurnosnih plombi (Tamper-Evident Seal).',
+    schedule: 'weekly', format: 'PDF', enabled: true, lastRun: '2026-04-07 06:00',
+    templates: [{ id: 't9', name: 'Chain of Custody & Transit Report', isDefault: true }],
+    activeTemplateId: 't9', recipients: 'logistics@posta.hr',
+  },
+  {
+    id: 'iso_a7_13_maintenance', name: 'ISO A.7.13 — Preventive Maintenance, Calibration & Overdue WOs', category: 'Maintenance',
+    isoControl: 'ISO 27001 A.7.13', nis2Ref: 'NIS2 Art. 21.2(c)', gdprRef: '—',
+    description: 'Status redovnih planova održavanja (UPS, agregati, klima, vatrodojava, kalibracije) i prekoračenih radnih naloga (WorkOrder).',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't10', name: 'ISO A.7.13 Maintenance Compliance', isDefault: true }],
+    activeTemplateId: 't10', recipients: 'maintenance@posta.hr',
+  },
+  {
+    id: 'iso_a7_14_sanitization', name: 'ISO A.7.14 & A.8.10 — Reassignment Sanitization & 4-Eyes Disposal', category: 'Security & GDPR',
+    isoControl: 'ISO 27001 A.7.14, A.8.10', nis2Ref: 'NIS2 Art. 21.2(e)', gdprRef: 'GDPR Art. 5.1(f) & 17',
+    description: 'Registar svih sanitizacija pri prijelazu laptopa (User A → User B) i NIST 800-88 certifikata o brisanju kod rashoda uz 4-oči potvrdu.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't11', name: 'NIST 800-88 & GDPR Sanitization Register', isDefault: true }],
+    activeTemplateId: 't11', recipients: 'dpo@posta.hr, ciso@posta.hr',
+  },
+  {
+    id: 'iso_a8_1_endpoints', name: 'ISO A.8.1 & A.8.24 — Endpoint Hardening (FDE, MDM/EDR & SOPs)', category: 'HR & Endpoints',
+    isoControl: 'ISO 27001 A.8.1, A.8.7, A.8.24', nis2Ref: 'NIS2 Art. 21.2(g),(h)', gdprRef: 'GDPR Art. 32.1(a)',
+    description: 'Pregled svih izdanih krajnjih uređaja i statusa izvršenih sigurnosnih SOP checklista (BitLocker/LUKS, EDR, ukidanje lokalnog admina).',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't12', name: 'Endpoint Cyber Hygiene Report', isDefault: true }],
+    activeTemplateId: 't12', recipients: 'it-admin@posta.hr, ciso@posta.hr',
+  },
+  {
+    id: 'iso_a8_8_eol', name: 'ISO A.8.8 & NIS2 Art. 21.2(e) — EoL / EoS Hardware & Expired Warranties', category: 'Assets',
+    isoControl: 'ISO 27001 A.8.8', nis2Ref: 'NIS2 Art. 21.2(e)', gdprRef: 'GDPR Art. 32',
+    description: 'Popis opreme s isteklom garancijom ili pred istekom podrške proizvođača (EoL/EoS) koja ne prima sigurnosne zakrpe.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't13', name: 'NIS2 EoL & Vulnerability Horizon', isDefault: true }],
+    activeTemplateId: 't13', recipients: 'ciso@posta.hr, procurement@posta.hr',
+  },
+  {
+    id: 'iso_a8_14_bcp_spares', name: 'ISO A.8.14 & NIS2 Art. 21.2(c) — Critical Spares & Minimum Stock (BCP)', category: 'Supplies',
+    isoControl: 'ISO 27001 A.8.14', nis2Ref: 'NIS2 Art. 21.2(c)', gdprRef: 'GDPR Art. 32.1(c)',
+    description: 'Stanje kritičnih rezervnih dijelova (HDD, PSU, SFP), potrošnog materijala i opreme ispod minimalnog praga za kontinuitet poslovanja.',
+    schedule: 'monthly', format: 'CSV', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't14', name: 'BCP Critical Spares & Stock Thresholds', isDefault: true }],
+    activeTemplateId: 't14', recipients: 'warehouse@posta.hr',
+  },
+  {
+    id: 'iso_a8_15_audit_log', name: 'ISO A.8.15 & A.8.16 — Immutable Audit Trail & Privileged Actions', category: 'Security & RBAC',
+    isoControl: 'ISO 27001 A.8.15, A.8.16', nis2Ref: 'NIS2 Art. 21.2(b),(i)', gdprRef: 'GDPR Art. 5.2',
+    description: 'Mjesečni izvadak iz nepromjenjivog AuditLoga za sigurnosno osjetljive akcije, promjene rola, konfiguracije i brisanja.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't15', name: 'Immutable Security Audit Log Summary', isDefault: true }],
+    activeTemplateId: 't15', recipients: 'ciso@posta.hr',
+  },
+  {
+    id: 'iso_a8_24_pki_tsa', name: 'ISO A.8.24 & eIDAS — Signing Certificates & PAdES-LTA Timestamps', category: 'Certificates',
+    isoControl: 'ISO 27001 A.8.24, A.5.33', nis2Ref: 'NIS2 Art. 21.2(h)', gdprRef: 'GDPR Art. 5.1(f)',
+    description: 'Status svih kriptografski potpisanih dokumenata u arhivi (AssetDocument), SHA-256 integritet, broj žigova i rokovi LTA obnove.',
+    schedule: 'monthly', format: 'PDF', enabled: true, lastRun: '2026-04-01 03:30',
+    templates: [{ id: 't16', name: 'PAdES-B-LTA Archival Integrity Report', isDefault: true }],
+    activeTemplateId: 't16', recipients: 'compliance@posta.hr, ciso@posta.hr',
   },
 ];
 
-const REPORT_CATEGORIES = ['Assets', 'Maintenance', 'Supplies', 'Certificates', 'Finance', 'HR'];
+const REPORT_CATEGORIES = ['Assets', 'HR & Endpoints', 'Security & RBAC', 'Supply Chain', 'Security & Incidents', 'Physical Security', 'Maintenance', 'Security & GDPR', 'Supplies', 'Certificates'];
 const FORMAT_OPTIONS: ReportFormat[] = ['PDF', 'CSV', 'XLSX'];
-const SCHEDULE_OPTIONS: ReportSchedule[] = ['on_demand', 'daily', 'weekly', 'monthly', 'quarterly'];
+const SCHEDULE_OPTIONS: ReportSchedule[] = ['on_demand', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
 
 function FormatBadge({ format }: { format: ReportFormat }) {
   const colors: Record<ReportFormat, string> = {
@@ -288,11 +385,46 @@ export function ReportsTab() {
   const [newCategory, setNewCategory] = useState('Assets');
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [runningId, setRunningId] = useState<string | null>(null);
 
   const cur = reports.find(r => r.id === selected)!;
 
   const update = (id: string, patch: Partial<ReportDefinition>) =>
     setReports(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
+
+  const runReportNow = async (r: ReportDefinition) => {
+    setRunningId(r.id);
+    const token = localStorage.getItem('inverum_access_token') || localStorage.getItem('token');
+    try {
+      const res = await fetch(`/api/v1/documents/compliance-reports/${r.id}/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ format: r.format }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const sha256 = res.headers.get('X-Document-SHA256');
+      const blob = await res.blob();
+      const ext = r.format.toLowerCase();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${r.id}_${new Date().toISOString().slice(0, 10)}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      update(r.id, { lastRun: nowStr, lastHash: sha256 });
+    } catch {
+      // Offline fallback timestamp
+      update(r.id, { lastRun: new Date().toISOString().slice(0, 16).replace('T', ' ') });
+    } finally {
+      setRunningId(null);
+    }
+  };
 
   const addReport = () => {
     if (!newName.trim()) return;
@@ -360,18 +492,43 @@ export function ReportsTab() {
       <div className="flex-1 px-8 py-6 overflow-auto">
         <div className="flex items-start justify-between mb-1">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-theme-lg font-semibold text-theme-text">{cur.name}</h2>
               <FormatBadge format={cur.format} />
               <span className="text-theme-xs text-theme-text-subtle bg-theme-bg border border-theme-border px-1.5 py-0.5 rounded">{cur.category}</span>
+              {cur.isoControl && (
+                <span className="text-[11px] font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-1.5 py-0.5 rounded">
+                  ISO 27001 {cur.isoControl}
+                </span>
+              )}
+              {cur.nis2Ref && cur.nis2Ref !== '—' && (
+                <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                  {cur.nis2Ref}
+                </span>
+              )}
+              {cur.gdprRef && cur.gdprRef !== '—' && (
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                  {cur.gdprRef}
+                </span>
+              )}
             </div>
             <p className="text-theme-xs text-theme-text-muted mt-0.5">
               {cur.lastRun ? `Last run: ${cur.lastRun}` : 'Never run'}
+              {cur.lastHash && (
+                <span className="ml-2 font-mono text-[10px] text-emerald-400">
+                  PAdES-B-LTA SHA-256: {cur.lastHash.slice(0, 16)}…
+                </span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs border border-theme-border hover:border-theme-border-strong text-theme-text-muted hover:text-theme-text rounded transition-colors">
-              <RefreshCw size={11} /> Run now
+            <button
+              onClick={() => runReportNow(cur)}
+              disabled={runningId === cur.id}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs border border-theme-border hover:border-theme-border-strong text-theme-text-muted hover:text-theme-text rounded transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={11} className={runningId === cur.id ? 'animate-spin' : ''} />
+              {runningId === cur.id ? 'Generating…' : 'Run now'}
             </button>
             <Toggle value={cur.enabled} onChange={v => update(cur.id, { enabled: v })} />
           </div>

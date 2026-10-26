@@ -1,12 +1,68 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Server, Box, Package, Wrench, ClipboardCheck, Store,
   MapPin, Users, Download, Terminal, Settings, User, ChevronDown, ChevronRight,
+  ShieldAlert, KeyRound,
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { TerminalPanel } from '../components/Terminal';
+import { apiFetch } from '../lib/api';
 import type { TreeNodeData } from '../types';
+
+interface LicenseStatusInfo {
+  is_licensed: boolean;
+  tier: string;
+  customer: string;
+  active_employees_count: number;
+  max_employees: number;
+  banner_required: boolean;
+  banner_reason: string | null;
+}
+
+export function UnlicensedEnterpriseBanner() {
+  const [status, setStatus] = useState<LicenseStatusInfo | null>(null);
+
+  const fetchStatus = () => {
+    apiFetch<LicenseStatusInfo>('/system/license-status')
+      .then(setStatus)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    window.addEventListener('inverum-license-updated', fetchStatus);
+    return () => window.removeEventListener('inverum-license-updated', fetchStatus);
+  }, []);
+
+  if (!status || !status.banner_required) return null;
+
+  return (
+    <div className="bg-amber-950/95 border-b border-amber-500/40 text-amber-100 px-6 py-1.5 flex items-center justify-between text-xs shrink-0 z-40">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <ShieldAlert size={14} className="text-amber-400 shrink-0" />
+        <span className="font-semibold text-amber-300 uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/30 shrink-0">
+          Fair-Use Enterprise Advisory
+        </span>
+        <span className="truncate">
+          {status.banner_reason || `Active employee count (${status.active_employees_count}) exceeds licensed limit (${status.max_employees}).`}
+          {' '}All features remain 100% unlocked.
+        </span>
+      </div>
+      <div className="flex items-center gap-3 shrink-0 ml-4">
+        <span className="font-mono text-[11px] text-amber-300/90">
+          Seats: {status.active_employees_count} / {status.max_employees}
+        </span>
+        <NavLink
+          to="/settings"
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 font-medium transition-colors"
+        >
+          <KeyRound size={11} /> Enter Offline License Key
+        </NavLink>
+      </div>
+    </div>
+  );
+}
 
 // --- NavItem ---
 function NavItem({ icon, label, to }: { icon: React.ReactNode; label: string; to: string }) {
@@ -198,6 +254,7 @@ export default function AppLayout() {
 
         {/* MAIN CONTENT */}
         <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          <UnlicensedEnterpriseBanner />
           <AppHeader />
           <Outlet />
         </main>

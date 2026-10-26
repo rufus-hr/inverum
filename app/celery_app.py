@@ -17,6 +17,8 @@ celery_app = Celery(
         "app.tasks.cleanup",
         "app.tasks.asset_event_cold_storage",
         "app.tasks.dashboard_stats",
+        "app.tasks.tsa_renewal",
+        "app.tasks.compliance_reports",
     ],
 )
 
@@ -35,6 +37,8 @@ celery_app.conf.update(
         "app.tasks.process_event.*": {"queue": "inverum-worker-default"},
         "app.tasks.cleanup.*": {"queue": "inverum-worker-default"},
         "app.tasks.asset_event_cold_storage.*": {"queue": "inverum-worker-default"},
+        "app.tasks.tsa_renewal.*": {"queue": "inverum-worker-default"},
+        "app.tasks.compliance_reports.*": {"queue": "inverum-worker-default"},
     },
     beat_schedule={
         "cleanup-revert-log-hourly": {
@@ -48,6 +52,25 @@ celery_app.conf.update(
         "compute-dashboard-stats": {
             "task": "app.tasks.dashboard_stats.compute_dashboard_stats",
             "schedule": timedelta(seconds=120),  # every 2 minutes
+        },
+        "renew-pades-lta-timestamps-monthly": {
+            "task": "app.tasks.tsa_renewal.renew_expiring_pades_timestamps",
+            "schedule": crontab(day_of_month=1, hour=2, minute=30),  # 1st of month 02:30 UTC
+        },
+        "compliance-reports-daily": {
+            "task": "app.tasks.compliance_reports.run_scheduled_compliance_reports",
+            "schedule": crontab(hour=5, minute=30),  # daily at 05:30 UTC
+            "args": ("daily",),
+        },
+        "compliance-reports-weekly": {
+            "task": "app.tasks.compliance_reports.run_scheduled_compliance_reports",
+            "schedule": crontab(day_of_week=1, hour=6, minute=0),  # Monday 06:00 UTC
+            "args": ("weekly",),
+        },
+        "compliance-reports-monthly": {
+            "task": "app.tasks.compliance_reports.run_scheduled_compliance_reports",
+            "schedule": crontab(day_of_month=1, hour=3, minute=30),  # 1st of month 03:30 UTC
+            "args": ("monthly",),
         },
     },
 )

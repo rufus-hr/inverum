@@ -1,5 +1,5 @@
-import React from 'react';
-import { X } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Printer, FileCheck2 } from 'lucide-react';
 import type { Asset, ActivePanel } from '../../types';
 import { HistoryTimeline } from '../HistoryTimeline';
 import { AssetEditForm } from './AssetEditForm';
@@ -16,7 +16,59 @@ interface AssetDetailPanelProps {
 export function AssetDetailPanel({
   asset, activePanel, onClose, onSaveEdit, onPanelChange, mockAuditLog,
 }: AssetDetailPanelProps) {
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+
   if (!asset || !activePanel) return null;
+
+  const handlePrintSticker = async () => {
+    const token = localStorage.getItem('inverum_access_token') || localStorage.getItem('token');
+    try {
+      const res = await fetch(`/api/v1/documents/stickers/asset/${asset.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error('Sticker generation failed');
+      const svgText = await res.text();
+      const win = window.open('', '_blank', 'width=520,height=320');
+      if (win) {
+        win.document.write(
+          `<!DOCTYPE html><html><head><title>Sticker ${asset.inventoryNumber}</title><style>@page{size:62mm 29mm;margin:0}body{margin:12px;display:flex;flex-direction:column;align-items:center;font-family:sans-serif;background:#f8fafc}</style></head><body>${svgText}<div style="margin-top:12px"><button onclick="window.print()" style="padding:6px 14px;background:#0f172a;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:12px">Print 62x29mm Label</button></div></body></html>`
+        );
+        win.document.close();
+      }
+    } catch {
+      // Fallback blob download
+    }
+  };
+
+  const handleGenerateHandoverPdf = async () => {
+    setGeneratingPdf(true);
+    const token = localStorage.getItem('inverum_access_token') || localStorage.getItem('token');
+    try {
+      const res = await fetch(`/api/v1/documents/handover/${asset.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          employee_name: asset.assignee || 'Custodian',
+          action_type: asset.status === 'Retired' ? 'decommission' : 'handover',
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to generate signed PDF');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `revers_${asset.inventoryNumber || asset.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   return (
     <>
@@ -31,9 +83,26 @@ export function AssetDetailPanel({
             <h2 className="text-lg font-bold text-slate-900">{asset.name}</h2>
             <p className="text-xs text-slate-500 font-mono">{asset.inventoryNumber}</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrintSticker}
+              title="ISO A.5.13 — Print 62x29mm QR + Code128 Sticker"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <Printer size={13} /> Print Sticker
+            </button>
+            <button
+              onClick={handleGenerateHandoverPdf}
+              disabled={generatingPdf}
+              title="ISO A.5.10 / A.5.11 — Generate PAdES-B-LTA Signed Handover PDF"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition-colors"
+            >
+              <FileCheck2 size={13} /> {generatingPdf ? 'Signing…' : 'Handover PDF (Revers)'}
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

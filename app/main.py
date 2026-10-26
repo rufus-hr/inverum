@@ -53,6 +53,9 @@ from app.routers import asset_events as asset_events_router
 from app.routers import dashboard as dashboard_router
 from app.routers import storage_units as storage_units_router
 from app.routers import supplies as supplies_router
+from app.routers import document_templates as document_templates_router
+from app.routers import documents as documents_router
+from app.routers import system_licensing as system_licensing_router
 
 
 @asynccontextmanager
@@ -153,3 +156,6 @@ app.include_router(storage_units_router.box_router, prefix="/api/v1")
 app.include_router(supplies_router.router, prefix="/api/v1")
 app.include_router(supplies_router.stock_router, prefix="/api/v1")
 app.include_router(supplies_router.movements_router, prefix="/api/v1")
+app.include_router(document_templates_router.router, prefix="/api/v1")
+app.include_router(documents_router.router, prefix="/api/v1")
+app.include_router(system_licensing_router.router, prefix="/api/v1")

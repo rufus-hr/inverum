@@ -56,6 +56,23 @@ export function GeneralOrgTab() {
 // General Tab
 // ---------------------------------------------------------------------------
 
+interface SystemLicenseStatus {
+  is_licensed: boolean;
+  has_license_key: boolean;
+  signature_valid: boolean;
+  is_expired: boolean;
+  tier: string;
+  customer: string;
+  license_id: string | null;
+  active_employees_count: number;
+  max_employees: number;
+  utilization_pct: number;
+  issued_at: string | null;
+  expires_at: string | null;
+  banner_required: boolean;
+  banner_reason: string | null;
+}
+
 export function GeneralTab() {
   const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
   const s = tenantConfig?.settings;
@@ -67,6 +84,38 @@ export function GeneralTab() {
   const [dateFormat, setDateFormat] = useState('DD.MM.YYYY');
   const [decimal, setDecimal] = useState(', (comma)');
   const [csvSeparator, setCsvSeparator] = useState('; (semicolon)');
+
+  const [licenseStatus, setLicenseStatus] = useState<SystemLicenseStatus | null>(null);
+  const [licenseInput, setLicenseInput] = useState('');
+  const [licenseError, setLicenseError] = useState<string | null>(null);
+  const [licenseSuccess, setLicenseSuccess] = useState<string | null>(null);
+  const [savingLicense, setSavingLicense] = useState(false);
+
+  useEffect(() => {
+    apiFetch<SystemLicenseStatus>('/system/license-status')
+      .then(setLicenseStatus)
+      .catch(() => {});
+  }, []);
+
+  const handleActivateLicense = async () => {
+    setLicenseError(null);
+    setLicenseSuccess(null);
+    setSavingLicense(true);
+    try {
+      const updated = await apiFetch<SystemLicenseStatus>('/system/license', {
+        method: 'PUT',
+        body: JSON.stringify({ license_key: licenseInput.trim() }),
+      });
+      setLicenseStatus(updated);
+      setLicenseInput('');
+      setLicenseSuccess(updated.has_license_key ? 'Ed25519 offline license verified and activated.' : 'Reverted to Community Free Tier.');
+      window.dispatchEvent(new Event('inverum-license-updated'));
+    } catch (err) {
+      setLicenseError(err instanceof Error ? err.message : 'Cryptographic Ed25519 signature verification failed.');
+    } finally {
+      setSavingLicense(false);
+    }
+  };
 
   useEffect(() => {
     if (!tenantConfig) return;
@@ -97,6 +146,79 @@ export function GeneralTab() {
       <SettingRow label="Date Format"><Select value={dateFormat} onChange={setDateFormat} options={['DD.MM.YYYY', 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD']} className="w-40" /></SettingRow>
       <SettingRow label="Decimal Separator"><Select value={decimal} onChange={setDecimal} options={[', (comma)', '. (dot)']} className="w-36" /></SettingRow>
       <SettingRow label="CSV Separator" description="Used in all CSV exports and expected on import"><Select value={csvSeparator} onChange={setCsvSeparator} options={['; (semicolon)', ', (comma)', '\t (tab)']} className="w-40" /></SettingRow>
+
+      {/* Offline Enterprise License (Ed25519) */}
+      <div className="mt-8 mb-6">
+        <SectionHeader
+          title="Fair-Use Offline Enterprise License (Ed25519)"
+          description="100% air-gapped Ed25519 RFC 8032 signature verification across all active employee seats. Zero telemetry, zero feature lockouts."
+        />
+      </div>
+      {licenseStatus && (
+        <div className="mb-6 p-4 rounded-lg border border-theme-border bg-theme-surface space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <KeyRound size={15} className="text-theme-primary" />
+              <span className="text-theme-sm font-semibold text-theme-text">{licenseStatus.customer}</span>
+              <Badge color={licenseStatus.banner_required ? 'amber' : 'green'}>
+                {licenseStatus.tier.toUpperCase()}
+              </Badge>
+              {licenseStatus.signature_valid && (
+                <Badge color="blue">Ed25519 Verified</Badge>
+              )}
+            </div>
+            <span className="text-theme-xs font-mono text-theme-text-muted">
+              Active Seats: <strong className="text-theme-text">{licenseStatus.active_employees_count}</strong> / {licenseStatus.max_employees} ({licenseStatus.utilization_pct}%)
+            </span>
+          </div>
+
+          <div className="w-full h-1.5 bg-theme-bg rounded-full overflow-hidden border border-theme-border">
+            <div
+              className={`h-full transition-all ${licenseStatus.banner_required ? 'bg-amber-500' : 'bg-emerald-500'}`}
+              style={{ width: `${Math.min(licenseStatus.utilization_pct, 100)}%` }}
+            />
+          </div>
+
+          {licenseStatus.expires_at && (
+            <div className="flex items-center justify-between text-[11px] text-theme-text-subtle">
+              <span>License ID: <span className="font-mono">{licenseStatus.license_id}</span></span>
+              <span>Valid until: <span className="font-mono">{licenseStatus.expires_at.slice(0, 10)}</span></span>
+            </div>
+          )}
+
+          {licenseStatus.banner_reason && (
+            <p className="text-theme-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-3 py-1.5">
+              {licenseStatus.banner_reason}
+            </p>
+          )}
+
+          <div className="pt-2 border-t border-theme-border space-y-2">
+            <label className="block text-theme-xs text-theme-text-muted">
+              Paste Offline License Key (<code className="font-mono text-[11px]">INV-ENT-...</code>)
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={licenseInput}
+                onChange={e => setLicenseInput(e.target.value)}
+                placeholder="INV-ENT-eyJjdXN0b21lciI6..."
+                className="flex-1 text-theme-xs font-mono bg-theme-bg border border-theme-border rounded px-3 py-1.5 text-theme-text focus:outline-none focus:border-theme-primary"
+              />
+              <button
+                type="button"
+                onClick={handleActivateLicense}
+                disabled={savingLicense}
+                className="px-3 py-1.5 text-theme-xs font-medium bg-theme-primary text-theme-primary-fg rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {savingLicense ? 'Verifying…' : licenseInput.trim() ? 'Verify & Activate' : 'Reset to Community'}
+              </button>
+            </div>
+            {licenseError && <p className="text-theme-xs text-red-400">{licenseError}</p>}
+            {licenseSuccess && <p className="text-theme-xs text-emerald-400">{licenseSuccess}</p>}
+          </div>
+        </div>
+      )}
+
       <SaveBar onSave={() => {
         const langMap: Record<string, string> = { 'English': 'en', 'Hrvatski': 'hr', 'Deutsch': 'de', 'Slovenščina': 'sl' };
         const curMap: Record<string, string> = { 'EUR — Euro': 'EUR', 'USD — Dollar': 'USD', 'HRK — Kuna (legacy)': 'HRK', 'GBP — Pound': 'GBP' };

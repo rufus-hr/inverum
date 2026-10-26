@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Truck, MapPin, Package, Cpu, Zap, Puzzle, ChevronRight, ChevronDown, X,
+  Truck, MapPin, Package, Cpu, Zap, Puzzle, ChevronRight, ChevronDown, X, Printer,
 } from 'lucide-react';
 import { BoxData, BoxAsset, BoxStockItem, statusColor, StatusIcon } from './BoxTypesAndHelpers';
 
@@ -50,6 +50,26 @@ export function BoxDetail({ box, onClose }: { box: BoxData; onClose: () => void 
   const [detailBox, setDetailBox] = useState<BoxData>(box);
   React.useEffect(() => { setDetailBox(box); }, [box]);
 
+  const handlePrintBoxSticker = async () => {
+    const token = localStorage.getItem('inverum_access_token') || localStorage.getItem('token');
+    try {
+      const res = await fetch(`/api/v1/documents/stickers/box/${detailBox.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return;
+      const svgText = await res.text();
+      const win = window.open('', '_blank', 'width=620,height=420');
+      if (win) {
+        win.document.write(
+          `<!DOCTYPE html><html><head><title>Box Label ${detailBox.inventory_number}</title><style>@page{size:100mm 50mm;margin:0}body{margin:12px;display:flex;flex-direction:column;align-items:center;font-family:sans-serif;background:#f8fafc}</style></head><body>${svgText}<div style="margin-top:12px"><button onclick="window.print()" style="padding:6px 14px;background:#0f172a;color:#fff;border:0;border-radius:6px;cursor:pointer;font-size:12px">Print 100x50mm Custody Label</button></div></body></html>`
+        );
+        win.document.close();
+      }
+    } catch {
+      // Ignore offline error
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-slate-50 border-l border-slate-200">
       <div className="bg-white border-b border-slate-200 px-5 py-4 shrink-0">
@@ -63,9 +83,18 @@ export function BoxDetail({ box, onClose }: { box: BoxData; onClose: () => void 
               {detailBox.label && <p className="text-xs text-slate-500">{detailBox.label}</p>}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handlePrintBoxSticker}
+              title="ISO A.7.10 — Print 100x50mm Chain of Custody Sticker"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <Printer size={12} /> Print Sticker
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2">
           {detailBox.status === 'in_transit' ? (
