@@ -54,7 +54,8 @@ def enrich_record(self, job_id: str, record_id: str) -> dict | None:
 
         # Remove task ID from Valkey tracking set
         v = get_valkey()
-        v.srem(_ENRICH_TASKS_KEY.format(job_id=job_id), self.request.id)
+        if v is not None:
+            v.srem(_ENRICH_TASKS_KEY.format(job_id=job_id), self.request.id)
 
         return record.suggested_data
 
@@ -69,6 +70,8 @@ def cancel_job_enrichments(job_id: str) -> None:
     Called when job is confirmed or rolled back.
     """
     v = get_valkey()
+    if v is None:
+        return
     key = _ENRICH_TASKS_KEY.format(job_id=job_id)
     task_ids = v.smembers(key)
 

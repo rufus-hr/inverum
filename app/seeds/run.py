@@ -109,6 +109,13 @@ SYSTEM_PERMISSIONS = [
     {"code": "work_order:write", "name": "Write Work Orders", "resource": "work_order", "action": "write", "description": "Create/update work orders"},
     {"code": "workspace:read", "name": "Read Workspaces", "resource": "workspace", "action": "read", "description": "View workspaces"},
     {"code": "workspace:manage", "name": "Manage Workspaces", "resource": "workspace", "action": "manage", "description": "Create/update/delete workspaces"},
+    {"code": "checklist:view", "name": "View Checklists", "resource": "checklist", "action": "view", "description": "View checklist templates and completions"},
+    {"code": "checklist:manage", "name": "Manage Checklists", "resource": "checklist", "action": "manage", "description": "Create/edit checklist templates and cancel completions"},
+    {"code": "checklist:fill", "name": "Fill Checklists", "resource": "checklist", "action": "fill", "description": "Check/uncheck checklist items"},
+    {"code": "checklist:submit", "name": "Submit Checklists", "resource": "checklist", "action": "submit", "description": "Submit completed checklists"},
+    {"code": "checklist:confirm", "name": "Confirm Checklists", "resource": "checklist", "action": "confirm", "description": "Confirm 4-eyes checklists"},
+    {"code": "tenant:admin", "name": "Tenant Administrator", "resource": "tenant", "action": "admin", "description": "Full tenant and licensing administration"},
+    {"code": "platform:procurement", "name": "MSP Cross-Tenant Procurement", "resource": "platform", "action": "procurement", "description": "View and export cross-tenant procurement shortages and renewals"},
 ]
 
 logger = logging.getLogger(__name__)
@@ -133,6 +140,7 @@ def _seed_permissions(db: Session) -> None:
             description=p.get("description"),
             is_active=True,
         ))
+    db.flush()
 
 
 def _seed_reference_data(db: Session, rows: list[dict]) -> None:
@@ -316,14 +324,55 @@ def _seed_dev(db: Session) -> None:
     logger.info("Dev seed complete: tenant=dev, admin user with Super Admin role + business data.")
 
 
+def _sync_super_admin_permissions(db: Session) -> None:
+    super_roles = db.query(Role).filter(Role.name == "Super Admin").all()
+    if not super_roles:
+        return
+    all_perms = db.query(Permission).filter(Permission.is_active == True).all()
+    for role in super_roles:
+        existing_perm_ids = {
+            rp.permission_id
+            for rp in db.query(RolePermission).filter(RolePermission.role_id == role.id).all()
+        }
+        for perm in all_perms:
+            if perm.id not in existing_perm_ids:
+                db.add(RolePermission(role_id=role.id, permission_id=perm.id))
+
+
+def _ensure_platform_user(db: Session) -> None:
+    from app.models.platform_user import PlatformUser, PlatformIdentity
+    existing = db.query(PlatformIdentity).filter_by(provider="local", provider_id="msp_admin").first()
+    if existing:
+        return
+    pu = PlatformUser(
+        email="msp@inverum.eu",
+        display_name="MSP Platform Owner",
+        is_active=True,
+    )
+    db.add(pu)
+    db.flush()
+    db.add(PlatformIdentity(
+        platform_user_id=pu.id,
+        provider="local",
+        provider_id="msp_admin",
+        metadata_={"password_hash": _hash_password("admin")},
+    ))
+    db.flush()
+
+
 def run_seeds(db: Session) -> None:
     try:
         already_seeded = db.query(SystemConfig).filter_by(key=SEED_KEY).first()
         if already_seeded:
+            _seed_permissions(db)
+            _sync_super_admin_permissions(db)
+            _ensure_platform_user(db)
+            db.commit()
             return
 
         _seed_reference_data(db, ALL_SYSTEM_SEEDS)
         _seed_permissions(db)
+        _ensure_platform_user(db)
 
         env = settings.ENVIRONMENT
 

@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Server, Box, Package, Wrench, ClipboardCheck, Store,
   MapPin, Users, Download, Terminal, Settings, User, ChevronDown, ChevronRight,
-  ShieldAlert, KeyRound,
+  ShieldAlert, KeyRound, ShoppingBag,
 } from 'lucide-react';
 import { useAppContext } from '../contexts/AppContext';
 import { TerminalPanel } from '../components/Terminal';
@@ -257,6 +257,7 @@ export default function AppLayout() {
             <NavItem icon={<Wrench size={20} />} label="Work Orders" to="/work-orders" />
             <NavItem icon={<ClipboardCheck size={20} />} label="Checklists" to="/checklists" />
             <NavItem icon={<Store size={20} />} label="Vendors" to="/vendors" />
+            <NavItem icon={<ShoppingBag size={20} />} label="MSP Nabava" to="/procurement" />
 
             <div className="mt-4 mb-1 relative h-4 flex items-center justify-center w-full">
               <div className="h-px bg-slate-800 w-8 group-hover:opacity-0 transition-opacity duration-300 absolute" />

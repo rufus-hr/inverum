@@ -92,20 +92,21 @@ export default function Sidebar() {
             <NavDivider />
           )}
           {modules.supplies && (
-            <NavItem icon={<ShoppingCart size={20} />} label="Supplies" to="/supplies" />
+            <NavItem icon={<ShoppingCart size={20} />} label="Supplies" to="/supply" />
           )}
           {modules.storage && (
-            <NavItem icon={<Archive size={20} />} label="Storage & Boxes" to="/storage" />
+            <NavItem icon={<Archive size={20} />} label="Storage & Boxes" to="/boxes" />
           )}
           {modules.vendors && (
             <NavItem icon={<Briefcase size={20} />} label="Vendors" to="/vendors" />
           )}
           {modules.maintenance && (
-            <NavItem icon={<Wrench size={20} />} label="Maintenance" to="/maintenance" />
+            <NavItem icon={<Wrench size={20} />} label="Maintenance" to="/work-orders" />
           )}
           {modules.checklists && (
             <NavItem icon={<ClipboardList size={20} />} label="Checklists" to="/checklists" />
           )}
+          <NavItem icon={<ShoppingCart size={20} />} label="MSP Nabava" to="/procurement" />
 
           {/* Utility — uvijek na dnu */}
           <div className="mt-auto flex flex-col gap-1 w-full">

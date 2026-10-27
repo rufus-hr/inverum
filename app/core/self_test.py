@@ -28,8 +28,8 @@ def _checks_sync() -> dict[str, bool]:
         results["database"] = False
 
     try:
-        import redis
-        r = redis.from_url(settings.VALKEY_URL, socket_connect_timeout=2, socket_timeout=2)
+        import valkey
+        r = valkey.Valkey.from_url(settings.VALKEY_URL, socket_connect_timeout=2, socket_timeout=2)
         r.ping()
         r.close()
         results["valkey"] = True

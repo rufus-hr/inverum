@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Laptop, Search, Edit2, ChevronDown, User, Box, MapPin, X,
-  Archive, Server, AlertCircle, CheckCircle2, Plus, Layers, Lock, Inbox, Layout,
+  Archive, Server, AlertCircle, CheckCircle2, Plus, Layers, Lock, Inbox, Layout, ScanLine,
 } from 'lucide-react';
 import { TreeView } from '../components/TreeView';
 import { EditLocationModal, AddEntityModal } from '../components/EditModals';
@@ -87,14 +87,24 @@ interface LocationsViewProps {
   assets: Asset[];
 }
 
-export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {}) {
+const EMPTY_ASSETS: Asset[] = [];
+
+export function LocationsView({ assets = EMPTY_ASSETS }: Partial<LocationsViewProps> = {}) {
   const [locTree, setLocTree] = useState<TreeNodeData[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch locations and assets from API
   const { data: locsData, refetch: refetchLocations } = useApiQuery<PagedResponse<LocationResponse>>('/locations/?limit=200');
-  const { data: apiAssetsData } = useApiQuery<CursorPagedResponse<AssetResponse>>('/assets/?limit=200', { skip: assets.length > 0 });
+  const { data: apiAssetsData, refetch: refetchAssets } = useApiQuery<CursorPagedResponse<AssetResponse>>('/assets/?limit=200', { skip: assets.length > 0 });
+
+  const locNameMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of locsData?.items ?? []) {
+      m.set(l.id, l.name);
+    }
+    return m;
+  }, [locsData]);
 
   const createLocationMutation = useApiMutation<Record<string, any>, LocationResponse>('/locations/', 'POST');
   const updateLocationMutation = useApiMutation<Record<string, any>, LocationResponse>('/locations/', 'PUT');
@@ -372,6 +382,14 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {/* Scanner / Physical Inventory Audit Trigger */}
+                    <button
+                      onClick={() => setIsScannerOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold text-sm transition-all shadow-sm"
+                    >
+                      <ScanLine size={16} />
+                      Inventura (Skener)
+                    </button>
                     {/* Floor Plan Trigger */}
                     <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 font-bold text-sm transition-all shadow-sm">
                       <Layout size={16} className="text-blue-600" />
@@ -415,11 +433,11 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                         <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Assignee</h4>
                         <div className="flex items-center gap-3 p-4 bg-white border border-slate-200 rounded-xl">
                           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                            IŠ
+                            {(filteredLocationAssets[0]?.assignee || 'WS').slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-900">Ivan Štimac</p>
-                            <p className="text-xs text-slate-500">IT Department</p>
+                            <p className="font-bold text-slate-900">{filteredLocationAssets[0]?.assignee || 'Shared Workspace'}</p>
+                            <p className="text-xs text-slate-500">{selectedLocationName}</p>
                           </div>
                         </div>
                       </div>
@@ -428,11 +446,11 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                         <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-2">
                           <div className="flex justify-between text-sm">
                             <span className="text-slate-500">Shared desk profile:</span>
-                            <span className="font-bold text-slate-900">&mdash;</span>
+                            <span className="font-bold text-slate-900">Active</span>
                           </div>
                           <div className="flex justify-between text-sm">
                             <span className="text-slate-500">Location:</span>
-                            <span className="font-bold text-slate-900">Soba 101, Kat 1</span>
+                            <span className="font-bold text-slate-900">{selectedLocationName}</span>
                           </div>
                         </div>
                       </div>
@@ -443,7 +461,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                         <table className="w-full text-left text-sm">
                           <tbody className="divide-y divide-slate-100">
-                            {localAssets.slice(0, 2).map(asset => (
+                            {filteredLocationAssets.map(asset => (
                               <tr key={asset.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="px-4 py-4">
                                   <div className="flex items-center gap-3">
@@ -458,7 +476,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                                 </td>
                                 <td className="px-4 py-4 text-right">
                                   <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                                    ACTIVE
+                                    {asset.status}
                                   </span>
                                 </td>
                               </tr>
@@ -493,7 +511,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                           <div className="bg-blue-600 h-full w-1/3" />
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-2 font-medium">14U used of 42U total</p>
+                        <p className="text-[10px] text-slate-500 mt-2 font-medium">{filteredLocationAssets.length * 2}U used of 42U total</p>
                       </div>
                     </div>
 
@@ -507,26 +525,18 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                       </div>
                       <div className="bg-white border border-slate-200 rounded-xl p-4">
                         <div className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <Server size={14} className="text-slate-400" />
-                              <div>
-                                <p className="text-xs font-bold text-slate-800">Dell PowerEdge R740</p>
-                                <p className="text-[9px] font-mono text-blue-600 font-bold">IT-SRV-001</p>
+                          {filteredLocationAssets.map(asset => (
+                            <div key={asset.id} className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Server size={14} className="text-slate-400" />
+                                <div>
+                                  <p className="text-xs font-bold text-slate-800">{asset.name}</p>
+                                  <p className="text-[9px] font-mono text-blue-600 font-bold">{asset.inventoryNumber}</p>
+                                </div>
                               </div>
+                              <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">{asset.status}</span>
                             </div>
-                            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">in_service</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <Server size={14} className="text-slate-400" />
-                              <div>
-                                <p className="text-xs font-bold text-slate-800">HP ProLiant DL380</p>
-                                <p className="text-[9px] font-mono text-blue-600 font-bold">IT-SRV-002</p>
-                              </div>
-                            </div>
-                            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">in_service</span>
-                          </div>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -554,7 +564,7 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                             <Box size={24} />
                           </div>
                           <div>
-                            <p className="text-2xl font-bold text-slate-900">{selectedLocationId === 'cab-regal' ? '3' : '12'}</p>
+                            <p className="text-2xl font-bold text-slate-900">{filteredLocationAssets.length}</p>
                             <p className="text-xs text-slate-500 font-medium">Total assets in unit</p>
                           </div>
                         </div>
@@ -626,10 +636,13 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                           </div>
                         </div>
                       ) : (
-                        <StorageUnitAssetList items={[
-                          { name: 'Lenovo T14 Gen3', inv: 'IT-LAP-300018', status: 'Storage' },
-                          { name: 'Dell Latitude 5530', inv: 'IT-LAP-300022', status: 'Active' },
-                        ]} />
+                        <StorageUnitAssetList
+                          items={filteredLocationAssets.map(a => ({
+                            name: a.name,
+                            inv: a.inventoryNumber,
+                            status: a.status,
+                          }))}
+                        />
                       )}
                     </div>
                   </div>
@@ -813,7 +826,19 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
           }
         }}
       />
-      <ScannerPlacementModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} />
+      <ScannerPlacementModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        locationId={selectedLocationId}
+        locationName={selectedLocationName || 'Odabrana lokacija'}
+        allAssets={localAssets}
+        locationAssetIds={selectedSubtreeIds}
+        locNameMap={locNameMap}
+        onAuditCompleted={() => {
+          refetchAssets();
+          refetchLocations();
+        }}
+      />
     </>
   );
 }

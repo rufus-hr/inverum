@@ -1,249 +1,505 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, ScanLine, ArrowRight, CheckCircle2, AlertCircle, Box, Server, Layers, MapPin } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  X, ScanLine, ArrowRight, CheckCircle2, AlertCircle,
+  MapPin, FileCheck2, RefreshCw, Search, ShieldCheck, AlertTriangle,
+} from 'lucide-react';
+import type { Asset } from '../types';
+import { getAccessToken, getLastTenantSlug, apiFetch } from '../lib/api';
 
 interface ScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  locationId?: string | null;
+  locationName?: string;
+  allAssets?: Asset[];
+  locationAssetIds?: Set<string>;
+  locNameMap?: Map<string, string>;
+  onAuditCompleted?: () => void;
 }
 
-type EntityType = 'A' | 'B' | 'R' | 'S' | 'L';
-
-interface ScannedEntity {
-  rawCode: string;
-  type: EntityType;
-  id: string;
-  name: string; // Mocked name for UI feedback
-}
-
-export function ScannerPlacementModal({ isOpen, onClose }: ScannerModalProps) {
-  const [scannedItems, setScannedItems] = useState<ScannedEntity[]>([]);
-  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
+export function ScannerPlacementModal({
+  isOpen,
+  onClose,
+  locationId,
+  locationName = 'Odabrana lokacija',
+  allAssets = [],
+  locationAssetIds,
+  locNameMap,
+  onAuditCompleted,
+}: ScannerModalProps) {
+  const [scannedCodes, setScannedCodes] = useState<string[]>([]);
+  const [manualInput, setManualInput] = useState('');
+  const [relocateMisplaced, setRelocateMisplaced] = useState(true);
+  const [auditNotes, setAuditNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'warn' | 'error'; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus the hidden input when modal opens to catch hardware scanner input
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setTimeout(() => inputRef.current?.focus(), 80);
     } else {
-      setScannedItems([]);
-      setScanStatus('idle');
+      setScannedCodes([]);
+      setManualInput('');
+      setFeedback(null);
+      setAuditNotes('');
     }
   }, [isOpen]);
 
-  // Keep focus on input if user clicks elsewhere in the modal
-  const handleModalClick = () => {
+  // Expected assets in this location/subtree
+  const expectedAssets = useMemo(() => {
+    if (!locationId) return allAssets.slice(0, 15);
+    if (locationAssetIds && locationAssetIds.size > 0) {
+      return allAssets.filter(a => locationAssetIds.has(a.locId));
+    }
+    return allAssets.filter(a => a.locId === locationId);
+  }, [allAssets, locationId, locationAssetIds]);
+
+  const expectedIds = useMemo(() => new Set(expectedAssets.map(a => a.id)), [expectedAssets]);
+
+  // Resolve scanned codes against allAssets
+  const scannedAssetsMap = useMemo<Map<string, Asset>>(() => {
+    const map = new Map<string, Asset>();
+    for (const code of scannedCodes) {
+      const normalized = code.trim().toUpperCase();
+      const clean = normalized.replace(/^INVERUM:ASSET:/i, '').split(':')[0];
+      const found = allAssets.find(
+        a =>
+          a.inventoryNumber.toUpperCase() === clean ||
+          (a.serial_number && a.serial_number.toUpperCase() === clean) ||
+          a.id.toUpperCase().startsWith(clean)
+      );
+      if (found) {
+        map.set(found.id, found);
+      }
+    }
+    return map;
+  }, [scannedCodes, allAssets]);
+
+  const matchedAssets = useMemo<Asset[]>(
+    () => Array.from(scannedAssetsMap.values()).filter((a: Asset) => expectedIds.has(a.id)),
+    [scannedAssetsMap, expectedIds]
+  );
+
+  const misplacedAssets = useMemo<Asset[]>(
+    () => Array.from(scannedAssetsMap.values()).filter((a: Asset) => !expectedIds.has(a.id)),
+    [scannedAssetsMap, expectedIds]
+  );
+
+  const missingAssets = useMemo<Asset[]>(
+    () => expectedAssets.filter(a => !scannedAssetsMap.has(a.id)),
+    [expectedAssets, scannedAssetsMap]
+  );
+
+  const handleScanCode = (raw: string) => {
+    const code = raw.trim().toUpperCase();
+    if (!code) return;
+    const clean = code.replace(/^INVERUM:ASSET:/i, '').split(':')[0];
+
+    const found = allAssets.find(
+      a =>
+        a.inventoryNumber.toUpperCase() === clean ||
+        (a.serial_number && a.serial_number.toUpperCase() === clean) ||
+        a.id.toUpperCase().startsWith(clean)
+    );
+
+    if (!found) {
+      setFeedback({ type: 'error', text: `Nepoznat barkod / inventarni broj: "${clean}"` });
+      return;
+    }
+
+    setScannedCodes(prev => (prev.includes(found.inventoryNumber) ? prev : [...prev, found.inventoryNumber]));
+
+    if (expectedIds.has(found.id)) {
+      setFeedback({ type: 'success', text: `MATCHED: ${found.name} (${found.inventoryNumber}) je na točnoj lokaciji.` });
+    } else {
+      const otherLoc = (found.locId && locNameMap?.get(found.locId)) || found.locId || 'Druga lokacija';
+      setFeedback({
+        type: 'warn',
+        text: `MISPLACED: ${found.name} (${found.inventoryNumber}) se u bazi vodi na "${otherLoc}"!`,
+      });
+    }
+    setManualInput('');
     inputRef.current?.focus();
   };
 
-  const getEntityIcon = (type: EntityType) => {
-    switch (type) {
-      case 'A': return <Server size={16} className="text-blue-500" />;
-      case 'B': return <Box size={16} className="text-amber-500" />;
-      case 'R': return <Server size={16} className="text-indigo-500" />;
-      case 'S': return <Layers size={16} className="text-emerald-500" />;
-      case 'L': return <MapPin size={16} className="text-slate-500" />;
-      default: return <ScanLine size={16} />;
+  const handleRelocateSingle = async (asset: Asset) => {
+    if (!locationId) return;
+    try {
+      await apiFetch(`/assets/${asset.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ location_id: locationId }),
+      });
+      setFeedback({
+        type: 'success',
+        text: `${asset.inventoryNumber} premješten na lokaciju ${locationName}.`,
+      });
+      onAuditCompleted?.();
+    } catch {
+      setFeedback({ type: 'error', text: `Greška pri premještanju ${asset.inventoryNumber}` });
     }
   };
 
-  const getEntityTypeName = (type: EntityType) => {
-    switch (type) {
-      case 'A': return 'Asset';
-      case 'B': return 'Box';
-      case 'R': return 'Rack';
-      case 'S': return 'Storage';
-      case 'L': return 'Location';
-      default: return 'Unknown';
-    }
-  };
-
-  const handleScan = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      const code = e.currentTarget.value.trim().toUpperCase();
-      e.currentTarget.value = ''; // Clear input immediately
-      
-      if (code.length !== 7) {
-        setScanStatus('error');
-        setErrorMessage(`Invalid code length: ${code.length}/7`);
-        setTimeout(() => setScanStatus('idle'), 2000);
-        return;
-      }
-
-      const type = code.charAt(0) as EntityType;
-      const validTypes = ['A', 'B', 'R', 'S', 'L'];
-      
-      if (!validTypes.includes(type)) {
-        setScanStatus('error');
-        setErrorMessage(`Invalid entity type: ${type}`);
-        setTimeout(() => setScanStatus('idle'), 2000);
-        return;
-      }
-
-      // Mock database lookup
-      const newEntity: ScannedEntity = {
-        rawCode: code,
-        type,
-        id: code.substring(1),
-        name: `${getEntityTypeName(type)} ${code.substring(1, 4)}`
+  const handleFinalizeAudit = async () => {
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        location_id: locationId || null,
+        location_name: locationName,
+        relocate_misplaced: relocateMisplaced,
+        notes: auditNotes.trim() || null,
+        items: [
+          ...matchedAssets.map(a => ({
+            asset_id: a.id,
+            inventory_number: a.inventoryNumber,
+            name: a.name,
+            expected_location: locationName,
+            audit_status: 'matched',
+          })),
+          ...misplacedAssets.map(a => ({
+            asset_id: a.id,
+            inventory_number: a.inventoryNumber,
+            name: a.name,
+            expected_location: (a.locId && locNameMap?.get(a.locId)) || a.locId || 'Druga lokacija',
+            audit_status: 'misplaced',
+          })),
+          ...missingAssets.map(a => ({
+            asset_id: a.id,
+            inventory_number: a.inventoryNumber,
+            name: a.name,
+            expected_location: locationName,
+            audit_status: 'missing',
+          })),
+        ],
       };
 
-      setScannedItems(prev => [...prev, newEntity]);
-      setScanStatus('success');
-      setTimeout(() => setScanStatus('idle'), 1000);
-    }
-  };
+      const token = getAccessToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const slug = getLastTenantSlug();
+      if (slug) headers['X-Tenant-Slug'] = slug;
 
-  const handleExecute = () => {
-    // In a real app, this would send the payload to the backend
-    console.log('Executing placement:', scannedItems);
-    setScanStatus('success');
-    setTimeout(() => {
+      const res = await fetch('/api/v1/documents/inventory-audit', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inventura_${locationName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+      onAuditCompleted?.();
       onClose();
-    }, 1500);
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: `Greška pri potpisivanju zapisnika: ${err?.message || 'Nepoznata greška'}` });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
 
-  // Logic to determine what action is being performed based on scanned items
-  let actionDescription = "Scan items to begin";
-  let canExecute = false;
-
-  if (scannedItems.length === 1) {
-    actionDescription = `Moving ${scannedItems[0].name}... Scan destination.`;
-  } else if (scannedItems.length >= 2) {
-    const source = scannedItems.slice(0, -1).map(i => i.name).join(', ');
-    const destination = scannedItems[scannedItems.length - 1];
-    actionDescription = `Place ${source} INTO ${destination.name}`;
-    canExecute = true;
-  }
-
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={handleModalClick}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        
-        {/* Hidden input to capture hardware scanner keystrokes */}
-        <input 
-          ref={inputRef}
-          type="text" 
-          className="opacity-0 absolute w-0 h-0" 
-          onKeyDown={handleScan}
-          autoComplete="off"
-        />
-
+    <div
+      className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="bg-slate-900 p-4 flex items-center justify-between text-white">
+        <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white shrink-0">
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${scanStatus === 'success' ? 'bg-emerald-500/20 text-emerald-400' : scanStatus === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
-              <ScanLine size={24} className={scanStatus === 'scanning' ? 'animate-pulse' : ''} />
+            <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
+              <ScanLine size={24} />
             </div>
             <div>
-              <h2 className="text-lg font-bold">Rapid Scanner</h2>
-              <p className="text-xs text-slate-400 font-mono">Awaiting 7-char Base32 input...</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold">Fizička inventura & Barcode / QR Skener</h2>
+                <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                  Zebra HID / Camera Ready
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+                <MapPin size={12} className="text-blue-400" />
+                Lokacija inventure: <strong className="text-white">{locationName}</strong>
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"
+          >
             <X size={20} />
           </button>
         </div>
 
-        {/* Action Status Bar */}
-        <div className={`p-3 text-center font-bold text-sm border-b ${
-          scanStatus === 'error' ? 'bg-red-50 text-red-700 border-red-200' :
-          canExecute ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
-          'bg-indigo-50 text-indigo-700 border-indigo-200'
-        }`}>
-          {scanStatus === 'error' ? (
-            <span className="flex items-center justify-center gap-2"><AlertCircle size={16} /> {errorMessage}</span>
-          ) : (
-            actionDescription
+        {/* Scanner Input Bar */}
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col gap-3 shrink-0">
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              handleScanCode(manualInput);
+            }}
+            className="flex items-center gap-3"
+          >
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={manualInput}
+                onChange={e => setManualInput(e.target.value)}
+                placeholder="Skeniraj QR / Code128 naljepnicu ili upiši inventarni / serijski broj pa pritisni Enter..."
+                className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+            >
+              <ScanLine size={15} /> Skeniraj
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                for (const a of expectedAssets) {
+                  setScannedCodes(prev => (prev.includes(a.inventoryNumber) ? prev : [...prev, a.inventoryNumber]));
+                }
+                setFeedback({
+                  type: 'success',
+                  text: `Svi očekivani uređaji na lokaciji (${expectedAssets.length}) označeni kao skenirani.`,
+                });
+              }}
+              className="px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-colors shrink-0"
+            >
+              Skeniraj sve prisutne ({expectedAssets.length})
+            </button>
+          </form>
+
+          {feedback && (
+            <div
+              className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-2 border ${
+                feedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : feedback.type === 'warn'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                    : 'bg-red-50 text-red-800 border-red-200'
+              }`}
+            >
+              {feedback.type === 'success' ? (
+                <CheckCircle2 size={15} className="shrink-0" />
+              ) : feedback.type === 'warn' ? (
+                <AlertTriangle size={15} className="shrink-0" />
+              ) : (
+                <AlertCircle size={15} className="shrink-0" />
+              )}
+              <span>{feedback.text}</span>
+            </div>
           )}
         </div>
 
-        {/* Scanned Items List */}
-        <div className="p-6 bg-slate-50 flex-1 min-h-[300px] flex flex-col gap-3">
-          {scannedItems.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-              <ScanLine size={48} className="mb-4 opacity-20" />
-              <p className="font-medium">Ready to scan</p>
-              <p className="text-xs mt-2">Scan an Asset, Box, or Rack</p>
+        {/* 3-Column Audit Breakdown: Matched / Misplaced / Missing */}
+        <div className="flex-1 overflow-y-auto p-6 grid grid-cols-3 gap-4 bg-slate-50/50">
+          {/* Column 1: MATCHED */}
+          <div className="bg-white border border-emerald-200 rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div className="px-4 py-3 bg-emerald-50/80 border-b border-emerald-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600" />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-900">
+                  Matched (Točna lokacija)
+                </span>
+              </div>
+              <span className="px-2 py-0.5 text-xs font-extrabold rounded-full bg-emerald-200 text-emerald-900">
+                {matchedAssets.length}
+              </span>
             </div>
-          ) : (
-            <>
-              {scannedItems.map((item, index) => {
-                const isLast = index === scannedItems.length - 1;
-                const isDestination = scannedItems.length > 1 && isLast;
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-64">
+              {matchedAssets.length === 0 ? (
+                <p className="p-6 text-center text-xs text-slate-400 italic">Još nema potvrđenih uređaja.</p>
+              ) : (
+                matchedAssets.map(a => (
+                  <div key={a.id} className="px-3.5 py-2.5 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate">{a.name}</p>
+                      <p className="text-[11px] font-mono text-emerald-700 font-bold">{a.inventoryNumber}</p>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      OK
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
 
-                return (
-                  <div key={index} className="flex items-center gap-3">
-                    {/* Connection Line/Arrow */}
-                    {index > 0 && (
-                      <div className="flex flex-col items-center justify-center w-8">
-                        <div className="w-0.5 h-4 bg-slate-300"></div>
-                        <ArrowRight size={16} className="text-slate-400 my-1" />
-                        <div className="w-0.5 h-4 bg-slate-300"></div>
+          {/* Column 2: MISPLACED */}
+          <div className="bg-white border border-amber-200 rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div className="px-4 py-3 bg-amber-50/80 border-b border-amber-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-amber-600" />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-amber-900">
+                  Misplaced (Kriva lokacija)
+                </span>
+              </div>
+              <span className="px-2 py-0.5 text-xs font-extrabold rounded-full bg-amber-200 text-amber-900">
+                {misplacedAssets.length}
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-64">
+              {misplacedAssets.length === 0 ? (
+                <p className="p-6 text-center text-xs text-slate-400 italic">Nema uređaja s drugih lokacija.</p>
+              ) : (
+                misplacedAssets.map(a => {
+                  const expectedLoc = (a.locId && locNameMap?.get(a.locId)) || a.locId || 'Druga lokacija';
+                  return (
+                    <div key={a.id} className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">{a.name}</p>
+                        <p className="text-[11px] font-mono text-amber-700 font-bold">{a.inventoryNumber}</p>
+                        <p className="text-[10px] text-slate-500 truncate">Vodi se na: {expectedLoc}</p>
                       </div>
-                    )}
-                    
-                    {/* Item Card */}
-                    <div className={`flex-1 flex items-center justify-between p-3 rounded-lg border shadow-sm ${
-                      isDestination ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'
-                    }`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded bg-slate-100 ${isDestination ? 'bg-emerald-100' : ''}`}>
-                          {getEntityIcon(item.type)}
-                        </div>
-                        <div>
-                          <p className={`font-bold text-sm ${isDestination ? 'text-emerald-900' : 'text-slate-900'}`}>
-                            {item.name}
-                          </p>
-                          <p className="text-xs font-mono text-slate-500">{item.rawCode}</p>
-                        </div>
-                      </div>
-                      
-                      {isDestination && (
-                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-2 py-1 rounded">
-                          Destination
-                        </span>
-                      )}
-                      {!isDestination && scannedItems.length > 1 && (
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                          Payload
-                        </span>
+                      {locationId && (
+                        <button
+                          type="button"
+                          onClick={() => handleRelocateSingle(a)}
+                          className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[10px] font-bold shrink-0 transition-colors"
+                          title="Premjesti na ovu lokaciju"
+                        >
+                          Premjesti ovdje
+                        </button>
                       )}
                     </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Column 3: MISSING */}
+          <div className="bg-white border border-red-200 rounded-xl flex flex-col overflow-hidden shadow-sm">
+            <div className="px-4 py-3 bg-red-50/80 border-b border-red-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} className="text-red-600" />
+                <span className="text-xs font-extrabold uppercase tracking-wider text-red-900">
+                  Missing (Nije skenirano)
+                </span>
+              </div>
+              <span className="px-2 py-0.5 text-xs font-extrabold rounded-full bg-red-200 text-red-900">
+                {missingAssets.length}
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-64">
+              {missingAssets.length === 0 ? (
+                <p className="p-6 text-center text-xs text-emerald-600 font-bold">
+                  Svi uređaji s ove lokacije su pronađeni!
+                </p>
+              ) : (
+                missingAssets.map(a => (
+                  <div key={a.id} className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 truncate">{a.name}</p>
+                      <p className="text-[11px] font-mono text-red-600 font-bold">{a.inventoryNumber}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleScanCode(a.inventoryNumber)}
+                      className="px-2 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded text-[10px] font-bold shrink-0 transition-colors"
+                    >
+                      + Skeniraj
+                    </button>
                   </div>
-                );
-              })}
-            </>
-          )}
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-4 bg-white border-t border-slate-200 flex justify-between items-center">
-          <button 
-            onClick={() => setScannedItems([])}
-            className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-            disabled={scannedItems.length === 0}
-          >
-            Clear All
-          </button>
-          
-          <button 
-            onClick={handleExecute}
-            disabled={!canExecute}
-            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 transition-all ${
-              canExecute 
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
-                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-            }`}
-          >
-            {scanStatus === 'success' && canExecute ? (
-              <><CheckCircle2 size={18} /> Executed</>
-            ) : (
-              <><ArrowRight size={18} /> Execute Placement</>
-            )}
-          </button>
+        {/* Quick simulation bar for testing misplaced scan from another room */}
+        {allAssets.length > expectedAssets.length && (
+          <div className="px-6 py-2.5 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">
+              Brzi test skeniranja uređaja koji pripada drugoj lokaciji (Misplaced):
+            </span>
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {allAssets
+                .filter(a => !expectedIds.has(a.id) && !scannedAssetsMap.has(a.id))
+                .slice(0, 3)
+                .map(a => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => handleScanCode(a.inventoryNumber)}
+                    className="px-2 py-1 bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 rounded font-mono text-[11px] font-bold transition-colors"
+                  >
+                    + {a.inventoryNumber}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={relocateMisplaced}
+                onChange={e => setRelocateMisplaced(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              Automatski premjesti Misplaced uređaje ({misplacedAssets.length}) na ovu lokaciju
+            </label>
+            <input
+              type="text"
+              value={auditNotes}
+              onChange={e => setAuditNotes(e.target.value)}
+              placeholder="Napomena revizora uz zapisnik..."
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-56 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setScannedCodes([]);
+                setFeedback(null);
+              }}
+              className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              Resetiraj
+            </button>
+            <button
+              type="button"
+              onClick={handleFinalizeAudit}
+              disabled={isSubmitting}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-2 transition-all"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin" /> Potpisivanje PAdES-B-LTA...
+                </>
+              ) : (
+                <>
+                  <FileCheck2 size={15} /> Zaključi inventuru & Preuzmi PAdES Zapisnik
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

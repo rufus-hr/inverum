@@ -10,6 +10,10 @@ export function setTokens(access: string, refresh: string) {
   localStorage.setItem('refresh_token', refresh);
 }
 
+export function getAccessToken(): string | null {
+  return _accessToken;
+}
+
 export function clearTokens() {
   _accessToken = null;
   _refreshToken = null;

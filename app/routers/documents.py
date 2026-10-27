@@ -68,6 +68,22 @@ class HandoverDocumentRequest(BaseModel):
     notes: str | None = None
 
 
+class InventoryAuditItemPayload(BaseModel):
+    asset_id: str | None = None
+    inventory_number: str
+    name: str
+    expected_location: str | None = None
+    audit_status: str  # "matched" | "misplaced" | "missing"
+
+
+class InventoryAuditRequest(BaseModel):
+    location_id: str | None = None
+    location_name: str = "Location Audit"
+    items: list[InventoryAuditItemPayload] = []
+    relocate_misplaced: bool = False
+    notes: str | None = None
+
+
 @router.get("/", response_model=PagedResponse[AssetDocumentResponse])
 def list_documents(
     document_type: str | None = None,
@@ -374,6 +390,139 @@ def generate_signed_handover_pdf(
         last_timestamped_at=signed.last_timestamped_at,
         timestamp_count=signed.timestamp_count,
         notes=f"{doc_title} — {asset_name} ({inv_no}) -> {emp_name}",
+    )
+    db.add(doc_record)
+    db.commit()
+
+    return Response(
+        content=signed.pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "X-Document-SHA256": signed.sha256_hash,
+            "X-Document-TSA-Expires": signed.tsa_expires_at.isoformat(),
+            "Access-Control-Expose-Headers": "Content-Disposition, X-Document-SHA256, X-Document-TSA-Expires",
+        },
+    )
+
+
+@router.post("/inventory-audit")
+def generate_signed_inventory_audit_pdf(
+    payload: InventoryAuditRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Finalize a Physical Inventory / Barcode Scanner Audit Run (ISO 27001 A.5.9 / A.7.8),
+    optionally relocate misplaced assets to the audited location, and issue a PAdES-B-LTA
+    signed Inventory Audit Certificate PDF.
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+    tenant_name = tenant.name if tenant else "Hrvatska Posta d.d."
+
+    legal_entity = (
+        db.query(LegalEntity)
+        .filter(LegalEntity.tenant_id == user.tenant_id, LegalEntity.deleted_at.is_(None))
+        .first()
+    )
+    le_name = legal_entity.legal_name if legal_entity else tenant_name
+
+    loc_uuid: uuid.UUID | None = None
+    if payload.location_id:
+        try:
+            loc_uuid = uuid.UUID(payload.location_id)
+        except ValueError:
+            loc_uuid = None
+
+    relocated_count = 0
+    if payload.relocate_misplaced and loc_uuid:
+        for item in payload.items:
+            if item.audit_status == "misplaced" and item.asset_id:
+                try:
+                    aid = uuid.UUID(item.asset_id)
+                    asset = (
+                        db.query(Asset)
+                        .filter(Asset.id == aid, Asset.tenant_id == user.tenant_id, Asset.deleted_at.is_(None))
+                        .first()
+                    )
+                    if asset:
+                        asset.location_id = loc_uuid
+                        relocated_count += 1
+                except ValueError:
+                    pass
+
+    matched = [i for i in payload.items if i.audit_status == "matched"]
+    misplaced = [i for i in payload.items if i.audit_status == "misplaced"]
+    missing = [i for i in payload.items if i.audit_status == "missing"]
+
+    now_utc = datetime.now(timezone.utc)
+    actor_label = user.email or user.display_name or "IT Auditor"
+    doc_title = f"ZAPISNIK O FIZICKOJ INVENTURI IMOVINE — {payload.location_name.upper()}"
+
+    meta_lines = [
+        ("Legal Entity / Tenant", le_name),
+        ("Audited Location / Unit", payload.location_name),
+        ("Summary (Matched / Misplaced / Missing)", f"{len(matched)} MATCHED  |  {len(misplaced)} MISPLACED  |  {len(missing)} MISSING"),
+        ("Relocated to Audited Location", f"{relocated_count} assets updated"),
+        ("Auditor / Issued By", actor_label),
+    ]
+    headers = ["Inventory #", "Asset Name", "Expected Location", "Audit Status"]
+    rows: list[list[str]] = []
+    for item in payload.items[:60]:
+        status_label = item.audit_status.upper()
+        if item.audit_status == "misplaced" and payload.relocate_misplaced and loc_uuid:
+            status_label = "RELOCATED -> MATCHED"
+        rows.append([
+            item.inventory_number[:22],
+            item.name[:32],
+            (item.expected_location or payload.location_name)[:26],
+            status_label,
+        ])
+    if not rows:
+        rows.append(["—", "No assets recorded in audit session", payload.location_name[:26], "EMPTY"])
+    if payload.notes:
+        rows.append(["NOTE", payload.notes[:48], "Auditor Remark", "LOGGED"])
+
+    raw_pdf = build_deterministic_pdf(
+        title=doc_title,
+        subtitle="ISO/IEC 27001:2022 (A.5.9 Inventory of Information & Assets, A.7.8 Equipment Siting)  |  eIDAS PAdES-B-LTA",
+        meta_lines=meta_lines,
+        headers=headers,
+        rows=rows,
+    )
+
+    signed = sign_pdf_pades_lta(
+        pdf_bytes=raw_pdf,
+        tenant_id=str(user.tenant_id),
+        legal_entity_name=le_name,
+        signer_name=actor_label,
+        reason=f"Physical Inventory Audit: {payload.location_name}",
+    )
+
+    safe_loc = "".join(c if c.isalnum() else "_" for c in payload.location_name.lower()).strip("_") or "loc"
+    file_name = f"inventura_{safe_loc}_{now_utc.strftime('%Y%m%d_%H%M%S')}.pdf"
+    storage_path = store_document_in_minio(
+        tenant_id=str(user.tenant_id),
+        category="inventory_audit",
+        file_name=file_name,
+        content_bytes=signed.pdf_bytes,
+    )
+
+    doc_record = AssetDocument(
+        tenant_id=user.tenant_id,
+        document_type="inventory_audit",
+        file_name=file_name,
+        file_path=storage_path,
+        file_size=len(signed.pdf_bytes),
+        mime_type="application/pdf",
+        is_signed=True,
+        signed_at=signed.signed_at,
+        signed_by=user.id,
+        sha256_hash=signed.sha256_hash,
+        tsa_expires_at=signed.tsa_expires_at,
+        last_timestamped_at=signed.last_timestamped_at,
+        timestamp_count=signed.timestamp_count,
+        notes=f"{doc_title} ({len(matched)} matched, {len(misplaced)} misplaced, {len(missing)} missing)",
     )
     db.add(doc_record)
     db.commit()

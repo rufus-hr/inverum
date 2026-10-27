@@ -20,6 +20,7 @@ const BoxesDashboard = lazy(() => import('./components/BoxComponents'));
 const StorageUnitDashboard = lazy(() => import('./components/StorageUnitComponents'));
 const SupplyDashboard = lazy(() => import('./components/SupplyComponents'));
 const RacksDashboard = lazy(() => import('./components/RackComponents'));
+const MspProcurementView = lazy(() => import('./views/MspProcurementView'));
 
 function PageLoader() {
   return (
@@ -61,6 +62,8 @@ export default function AppRoutes() {
           <Route path="work-orders" element={<WorkOrdersView />} />
           <Route path="checklists" element={<ChecklistsView />} />
           <Route path="vendors" element={<VendorsView />} />
+          <Route path="procurement" element={<MspProcurementView />} />
+          <Route path="platform/procurement" element={<MspProcurementView />} />
           <Route path="settings" element={<SettingsLanding />} />
           <Route path="settings/tenant" element={<TenantSettings />} />
           <Route path="settings/org/:orgId" element={<TenantSettings type="org" />} />

@@ -56,6 +56,7 @@ from app.routers import supplies as supplies_router
 from app.routers import document_templates as document_templates_router
 from app.routers import documents as documents_router
 from app.routers import system_licensing as system_licensing_router
+from app.routers import platform_msp as platform_msp_router
 
 
 @asynccontextmanager
@@ -159,3 +160,4 @@ app.include_router(supplies_router.movements_router, prefix="/api/v1")
 app.include_router(document_templates_router.router, prefix="/api/v1")
 app.include_router(documents_router.router, prefix="/api/v1")
 app.include_router(system_licensing_router.router, prefix="/api/v1")
+app.include_router(platform_msp_router.router, prefix="/api/v1")

@@ -156,7 +156,9 @@ function buildLocationTree(locs: LocationResponse[]): LocationNode[] {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export function BoxesDashboard({ boxes: initialBoxes = [] }: { boxes?: BoxData[] } = {}) {
+const EMPTY_BOXES: BoxData[] = [];
+
+export function BoxesDashboard({ boxes: initialBoxes = EMPTY_BOXES }: { boxes?: BoxData[] } = {}) {
   const toast = useToast();
   const { data: boxesResp, refetch: refetchBoxes } = useApiQuery<PagedResponse<BoxResponse>>('/boxes/?limit=200');
   const { data: assetsResp } = useApiQuery<PagedResponse<AssetResponse>>('/assets/?limit=200');
