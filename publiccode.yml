@@ -18,6 +18,8 @@ platforms:
   - linux
   - web
   - docker
+  - kubernetes
+  - k8s
 
 categories:
   - it-asset-management
