@@ -525,6 +525,7 @@ export default function ChecklistsView() {
         {activeTab === 'completions' && (
           <ActiveChecklistsTab
             completions={completions}
+            templates={templates}
             onUpdateCompletions={setCompletions}
             onToggleItemApi={handleToggleItemApi}
             onSubmitCompletionApi={handleSubmitCompletionApi}

@@ -55,6 +55,8 @@ class AssetModify(BaseModel):
 class AssetResponse(AssetBase):
     id: uuid.UUID
     tenant_id: uuid.UUID
+    is_checklist_pending: bool = False
+    pending_transition: dict | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None

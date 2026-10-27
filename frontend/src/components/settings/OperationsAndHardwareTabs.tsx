@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useContext, useEffect } from 'react';
 import {
   ChevronRight, ShieldCheck, Clock, Upload, RefreshCw,
   Award, Trash2, Bot, FileText, Tag, Plus, Check, X,
 } from 'lucide-react';
 import {
+  SettingsContext, TenantConfigData, apiFetch,
   SectionHeader, SettingRow, Input, Select, Badge, SaveBar, Toggle,
 } from './SettingsShared';
 import { useApiQuery } from '../../hooks/useApi';
@@ -23,12 +24,24 @@ interface AuditLogEntry {
 // ---------------------------------------------------------------------------
 
 export function CertificatesTab() {
+  const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const pki = tenantConfig?.settings?.pki as Record<string, string> | undefined;
   const [tsaUrl, setTsaUrl] = useState('http://timestamp.digicert.com');
   const [tsaVendor, setTsaVendor] = useState('DigiCert');
   const [expiryAlert, setExpiryAlert] = useState('30 days');
   const [confirmRegen, setConfirmRegen] = useState(false);
   const caInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!pki) return;
+    if (pki.tsaUrl) setTsaUrl(pki.tsaUrl);
+    if (pki.tsaVendor) setTsaVendor(pki.tsaVendor);
+    if (pki.expiryAlert) setExpiryAlert(pki.expiryAlert);
+  }, [pki]);
+
+  const certCn = tenantConfig?.name || 'Inverum Tenant';
+  const certOrg = tenantConfig?.code || 'INV';
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -54,7 +67,7 @@ export function CertificatesTab() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <ShieldCheck size={14} className="text-emerald-500" />
-                <span className="text-theme-sm font-medium text-theme-text">CN=Hrvatska Pošta d.d., O=HP, C=HR</span>
+                <span className="text-theme-sm font-medium text-theme-text">CN={certCn}, O={certOrg}, C=HR</span>
                 <Badge color="blue">auto-generated</Badge>
               </div>
               <p className="text-theme-xs text-theme-text-muted">Issuer: Self-signed (auto-generated)</p>
@@ -119,7 +132,14 @@ export function CertificatesTab() {
         <SettingRow label="Expiry Alert Threshold" description="Notify before certificate expires">
           <Select value={expiryAlert} onChange={setExpiryAlert} options={['7 days', '14 days', '30 days', '60 days', '90 days']} className="w-36" />
         </SettingRow>
-        <SaveBar onSave={() => {}} />
+        <SaveBar onSave={() => {
+          apiFetch<TenantConfigData>('/tenants/config/settings', {
+            method: 'PATCH',
+            body: JSON.stringify({
+              pki: { tsaUrl, tsaVendor, expiryAlert },
+            }),
+          }).then(setTenantConfig).catch(() => {});
+        }} />
       </div>
     </div>
   );
@@ -378,6 +398,7 @@ function FormatBadge({ format }: { format: ReportFormat }) {
 }
 
 export function ReportsTab() {
+  const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
   const [reports, setReports] = useState<ReportDefinition[]>(INITIAL_REPORTS);
   const [selected, setSelected] = useState<string>(INITIAL_REPORTS[0].id);
   const [adding, setAdding] = useState(false);
@@ -387,10 +408,27 @@ export function ReportsTab() {
   const [newTemplateName, setNewTemplateName] = useState('');
   const [runningId, setRunningId] = useState<string | null>(null);
 
-  const cur = reports.find(r => r.id === selected)!;
+  useEffect(() => {
+    const saved = tenantConfig?.settings?.report_schedules;
+    if (Array.isArray(saved) && saved.length > 0) {
+      setReports(saved as unknown as ReportDefinition[]);
+    }
+  }, [tenantConfig?.settings?.report_schedules]);
 
-  const update = (id: string, patch: Partial<ReportDefinition>) =>
-    setReports(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
+  const cur = reports.find(r => r.id === selected) ?? reports[0];
+
+  const persistReports = (next: ReportDefinition[]) => {
+    setReports(next);
+    apiFetch<TenantConfigData>('/tenants/config/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ report_schedules: next }),
+    }).then(setTenantConfig).catch(() => {});
+  };
+
+  const update = (id: string, patch: Partial<ReportDefinition>) => {
+    const next = reports.map(r => r.id === id ? { ...r, ...patch } : r);
+    persistReports(next);
+  };
 
   const runReportNow = async (r: ReportDefinition) => {
     setRunningId(r.id);
@@ -430,12 +468,13 @@ export function ReportsTab() {
     if (!newName.trim()) return;
     const id = Date.now().toString();
     const tmplId = id + '_t';
-    setReports(rs => [...rs, {
+    const next: ReportDefinition[] = [...reports, {
       id, name: newName.trim(), category: newCategory,
       description: '', schedule: 'on_demand', format: 'PDF',
       templates: [{ id: tmplId, name: 'Default', isDefault: true }],
       activeTemplateId: tmplId, recipients: '', enabled: false, lastRun: null,
-    }]);
+    }];
+    persistReports(next);
     setSelected(id);
     setNewName(''); setAdding(false);
   };

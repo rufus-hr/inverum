@@ -1,27 +1,31 @@
-import React, { useState, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { Box } from 'lucide-react';
 import type { Asset, ActivePanel } from '../types';
-import type { CursorPagedResponse, AssetResponse } from '../types/api';
-import { mockAuditLog } from '../lib/mockData';
+import type { CursorPagedResponse, PagedResponse, AssetResponse, EmployeeResponse, LocationResponse } from '../types/api';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
+import { apiFetch } from '../lib/api';
+import { useToast } from '../hooks/useToast';
 import { useAssetFilters, applyFilters, getAvailableCustomFields } from '../hooks/useAssetFilters';
 import { useAssetSelection } from '../hooks/useAssetSelection';
 import { AssetFilters } from '../components/assets/AssetFilters';
 import { AssetTable } from '../components/assets/AssetTable';
 import { AssetDetailPanel } from '../components/assets/AssetDetailPanel';
+import { AssetDragOverlay, AssetDropAction } from '../components/assets/AssetDragOverlay';
 import { useAppContext } from '../contexts/AppContext';
 
-function mapApiAsset(a: AssetResponse): Asset {
+function mapApiAsset(a: AssetResponse, locMap?: Map<string, string>): Asset {
+  const cfStatus = (a.custom_fields as Record<string, string> | undefined)?.lifecycle_status;
   return {
     id: a.id,
-    inventoryNumber: a.inventory_number ?? a.id.slice(0, 8),
-    type: 'asset',
+    inventoryNumber: a.inventory_number ?? a.serial_number ?? a.id.slice(0, 8).toUpperCase(),
+    type: (a.custom_fields as Record<string, string> | undefined)?.asset_type ?? 'Laptop',
     name: a.name ?? 'Unnamed',
-    assignee: '—',
-    status: (a.status as Asset['status']) ?? 'in_stock',
+    assignee: (a.custom_fields as Record<string, string> | undefined)?.assignee_name ?? '—',
+    status: (cfStatus as Asset['status']) ?? (a.status as Asset['status']) ?? (a.is_active ? 'in_stock' : 'retired'),
     orgId: a.organization_id,
-    locId: a.location_id ?? '',
+    locId: (a.location_id && locMap?.get(a.location_id)) || a.location_id || '—',
     mobility_type: a.mobility_type ?? 'personal',
+    is_checklist_pending: Boolean(a.is_checklist_pending),
     custom_fields: a.custom_fields as Record<string, string> | undefined,
     serial_number: a.serial_number ?? undefined,
     vendor_id: a.vendor_id ?? undefined,
@@ -50,29 +54,42 @@ const AssetsView = forwardRef<AssetsViewHandle, AssetsViewProps>(function Assets
   ref
 ) {
   const { assetCategories } = useAppContext();
+  const toast = useToast();
   const filters = useAssetFilters();
   const selection = useAssetSelection();
 
   // API data (skipped if initialAssets provided)
-  const { data: apiData, isLoading } = useApiQuery<CursorPagedResponse<AssetResponse>>(
+  const { data: apiData, isLoading, refetch: refetchAssets } = useApiQuery<CursorPagedResponse<AssetResponse>>(
     '/assets/?limit=200',
     { skip: !!initialAssets }
   );
+  const { data: employeesResp } = useApiQuery<PagedResponse<EmployeeResponse>>('/employees/?limit=200');
+  const { data: locationsResp } = useApiQuery<PagedResponse<LocationResponse>>('/locations/?limit=200');
+
+  const employees = employeesResp?.items ?? [];
+  const locations = locationsResp?.items ?? [];
+  const locMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of locations) m.set(l.id, l.name);
+    return m;
+  }, [locations]);
 
   const apiAssets = useMemo(
-    () => (apiData?.items ?? []).map(mapApiAsset),
-    [apiData]
+    () => (apiData?.items ?? []).map(a => mapApiAsset(a, locMap)),
+    [apiData, locMap]
   );
 
+  const [localOverride, setLocalOverride] = useState<Asset[] | null>(null);
   const [localAssets, setLocalAssets] = useState<Asset[]>(initialAssets ?? []);
-  const assets = initialAssets ? localAssets : apiAssets;
+  const assets = initialAssets ? localAssets : (localOverride ?? apiAssets);
 
   const setAssets = (newAssets: Asset[]) => {
     if (initialAssets) {
       setLocalAssets(newAssets);
       onAssetsChange?.(newAssets);
+    } else {
+      setLocalOverride(newAssets);
     }
-    // For API mode, changes go through mutations
   };
 
   // Mutations
@@ -83,6 +100,8 @@ const AssetsView = forwardRef<AssetsViewHandle, AssetsViewProps>(function Assets
   const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [draggingAssetId, setDraggingAssetId] = useState<string | null>(null);
+  const [dropContext, setDropContext] = useState<{ asset: Asset; action: AssetDropAction | null } | null>(null);
+  const droppedOnTarget = useRef(false);
   const [activePreset, setActivePreset] = useState('default');
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(new Set(['type', 'assignee', 'location']));
 
@@ -130,6 +149,129 @@ const AssetsView = forwardRef<AssetsViewHandle, AssetsViewProps>(function Assets
   const closePanel = () => {
     setExpandedAssetId(null);
     setActivePanel(null);
+  };
+
+  const handleDragStart = (id: string) => {
+    setDraggingAssetId(id);
+    const found = assets.find(a => a.id === id);
+    if (found) setDropContext({ asset: found, action: null });
+  };
+
+  const handleDragEnd = () => {
+    setDraggingAssetId(null);
+    if (!droppedOnTarget.current) {
+      setDropContext(null);
+    }
+    droppedOnTarget.current = false;
+  };
+
+  const handleTargetDrop = async (action: AssetDropAction) => {
+    droppedOnTarget.current = true;
+    const targetAsset = dropContext?.asset;
+    if (!targetAsset) return;
+
+    if (action === 'assign' || action === 'move') {
+      setDropContext({ asset: targetAsset, action });
+      return;
+    }
+
+    const nextStatus = action === 'service' ? 'in_service' : 'retired';
+    setDropContext(null);
+    setAssets(assets.map(a => a.id === targetAsset.id ? {
+      ...a,
+      status: nextStatus,
+      is_checklist_pending: true,
+    } : a));
+
+    try {
+      await apiFetch(`/assets/${targetAsset.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: nextStatus,
+          custom_fields: { ...(targetAsset.custom_fields || {}), lifecycle_status: nextStatus },
+        }),
+      });
+      toast.success(
+        action === 'service'
+          ? `${targetAsset.inventoryNumber} poslan na servis (SOP checklista otvorena)`
+          : `${targetAsset.inventoryNumber} u procesu rashoda (4-Eyes SOP checklista otvorena)`
+      );
+      refetchAssets();
+      setLocalOverride(null);
+    } catch {
+      toast.error('Greška pri promjeni statusa uređaja');
+    }
+  };
+
+  const handleAssignEmployee = async (emp: EmployeeResponse) => {
+    const targetAsset = dropContext?.asset;
+    if (!targetAsset) return;
+    const empFullName = `${emp.first_name} ${emp.last_name}`;
+    setDropContext(null);
+    setAssets(assets.map(a => a.id === targetAsset.id ? {
+      ...a,
+      assignee: empFullName,
+      status: 'active',
+      is_checklist_pending: true,
+    } : a));
+
+    try {
+      await apiFetch('/asset-assignments', {
+        method: 'POST',
+        body: JSON.stringify({
+          asset_id: targetAsset.id,
+          assigned_to_type: 'user',
+          assigned_to_id: emp.id,
+          notes: `Assigned to ${empFullName} via Drag & Drop`,
+        }),
+      });
+      await apiFetch(`/assets/${targetAsset.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'active',
+          custom_fields: {
+            ...(targetAsset.custom_fields || {}),
+            lifecycle_status: 'active',
+            assignee_name: empFullName,
+          },
+        }),
+      });
+      toast.success(`${targetAsset.inventoryNumber} zadužen na ${empFullName} (SOP checklista otvorena)`);
+      refetchAssets();
+      setLocalOverride(null);
+    } catch {
+      toast.error('Greška pri zaduživanju opreme');
+    }
+  };
+
+  const handleMoveLocation = async (loc: LocationResponse) => {
+    const targetAsset = dropContext?.asset;
+    if (!targetAsset) return;
+    setDropContext(null);
+    setAssets(assets.map(a => a.id === targetAsset.id ? {
+      ...a,
+      locId: loc.name,
+      status: 'in_stock',
+    } : a));
+
+    try {
+      await apiFetch(`/assets/${targetAsset.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          location_id: loc.id,
+          status: 'in_stock',
+          custom_fields: {
+            ...(targetAsset.custom_fields || {}),
+            lifecycle_status: 'in_stock',
+          },
+        }),
+      });
+      toast.success(`${targetAsset.inventoryNumber} premješten na ${loc.name}`);
+      refetchAssets();
+      setLocalOverride(null);
+    } catch {
+      toast.error('Greška pri premještanju opreme');
+    }
   };
 
   useImperativeHandle(ref, () => ({
@@ -183,8 +325,8 @@ const AssetsView = forwardRef<AssetsViewHandle, AssetsViewProps>(function Assets
             draggingAssetId={draggingAssetId}
             onExpand={setExpandedAssetId}
             onPanelChange={setActivePanel}
-            onDragStart={setDraggingAssetId}
-            onDragEnd={() => setDraggingAssetId(null)}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             onClearFilters={filters.clearAll}
             visibleColumns={visibleColumns}
             onToggleColumn={toggleColumn}
@@ -201,8 +343,19 @@ const AssetsView = forwardRef<AssetsViewHandle, AssetsViewProps>(function Assets
         onClose={closePanel}
         onSaveEdit={handleSaveEdit}
         onPanelChange={setActivePanel}
-        mockAuditLog={mockAuditLog}
       />
+      {dropContext && (
+        <AssetDragOverlay
+          asset={dropContext.asset}
+          activeAction={dropContext.action}
+          employees={employees}
+          locations={locations}
+          onTargetDrop={handleTargetDrop}
+          onAssignEmployee={handleAssignEmployee}
+          onMoveLocation={handleMoveLocation}
+          onClose={() => setDropContext(null)}
+        />
+      )}
     </div>
   );
 });

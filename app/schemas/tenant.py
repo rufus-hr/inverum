@@ -39,6 +39,17 @@ class TenantSettings(BaseModel):
     timezone: str = "Europe/Zagreb"
     date_format: str = "DD.MM.YYYY"
     language: str = "hr"
+    country: str | None = "Croatia"
+    decimal_separator: str | None = ", (comma)"
+    csv_separator: str | None = "; (semicolon)"
+    security: dict | None = None
+    sso: dict | None = None
+    pki: dict | None = None
+    naming_schemas: list[dict] | None = None
+    report_schedules: list[dict] | None = None
+    webhooks: list[dict] | None = None
+
+    model_config = {"extra": "allow"}
 
 
 class TenantConfig(BaseModel):
@@ -60,7 +71,19 @@ class TenantModulesUpdate(BaseModel):
 
 
 class TenantSettingsUpdate(BaseModel):
+    tenant_name: str | None = None
     currency: str | None = None
     timezone: str | None = None
     date_format: str | None = None
     language: str | None = None
+    country: str | None = None
+    decimal_separator: str | None = None
+    csv_separator: str | None = None
+    security: dict | None = None
+    sso: dict | None = None
+    pki: dict | None = None
+    naming_schemas: list[dict] | None = None
+    report_schedules: list[dict] | None = None
+    webhooks: list[dict] | None = None
+
+    model_config = {"extra": "allow"}

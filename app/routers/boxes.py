@@ -65,8 +65,32 @@ def update_box(
     b = db.query(Box).filter(Box.id == box_id, Box.tenant_id == user.tenant_id, Box.deleted_at.is_(None)).first()
     if not b:
         raise HTTPException(status_code=404, detail="Box not found")
+    prev_status = b.status
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(b, field, value)
+
+    if b.status == "in_transit" and prev_status != "in_transit":
+        from app.models.asset import Asset
+        from app.services import checklist_service
+        box_assets = db.query(Asset).filter(
+            Asset.box_id == b.id,
+            Asset.tenant_id == user.tenant_id,
+            Asset.deleted_at.is_(None),
+        ).all()
+        for ba in box_assets:
+            checklist_service.trigger_event(
+                db=db,
+                event="box_in_transit",
+                asset=ba,
+                pending_transition={
+                    "type": "box_in_transit",
+                    "box_id": str(b.id),
+                    "box_inventory_number": b.inventory_number,
+                    "destination": b.notes or "Transit",
+                },
+                triggered_by_user_id=user.id,
+            )
+
     db.commit()
     db.refresh(b)
     return b

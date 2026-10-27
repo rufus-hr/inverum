@@ -26,6 +26,7 @@ export interface Asset {
   orgId: string;
   locId: string;
   mobility_type: string;
+  is_checklist_pending?: boolean;
   pending_sop?: string;
   sop_description?: string;
   sop_assignee?: string;

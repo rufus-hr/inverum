@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Building2, MapPin, User } from 'lucide-react';
-import { orgTree, locTree } from '../../lib/mockData';
+import { useAppContext } from '../../contexts/AppContext';
 import { TreeNodeData } from '../../types';
 
 // Helper for Header Dropdowns
@@ -79,6 +79,8 @@ const TreeNode = ({ node, selected, onToggle, depth = 0 }: { key?: React.Key, no
 };
 
 export default function Header() {
+  const { tenantName, currentUser, locTree } = useAppContext();
+  const orgTree = locTree;
   const [selectedOrgs, setSelectedOrgs] = useState<Set<string>>(new Set());
   const [selectedLocs, setSelectedLocs] = useState<Set<string>>(new Set());
 
@@ -111,11 +113,11 @@ export default function Header() {
         {/* Tenant */}
         <div className="flex items-center gap-3 px-3 py-1.5 rounded-md transition-colors border border-transparent">
           <div className="w-8 h-8 bg-indigo-600 rounded-md flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
-            HP
+            {(tenantName || 'TN').slice(0, 2).toUpperCase()}
           </div>
           <div className="flex flex-col">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tenant</span>
-            <span className="text-sm font-semibold text-slate-900">Hrvatska Pošta d.d.</span>
+            <span className="text-sm font-semibold text-slate-900">{tenantName || 'Tenant'}</span>
           </div>
         </div>
 
@@ -166,7 +168,7 @@ export default function Header() {
 
       {/* User Profile */}
       <div className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded-md transition-colors">
-        <span className="text-sm font-medium text-slate-700">ivan.stimac</span>
+        <span className="text-sm font-medium text-slate-700">{currentUser?.display_name || currentUser?.email || 'Admin'}</span>
         <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 border border-slate-300">
           <User size={16} />
         </div>

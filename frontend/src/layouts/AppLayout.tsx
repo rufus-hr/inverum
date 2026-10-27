@@ -90,11 +90,20 @@ function NavItem({ icon, label, to }: { icon: React.ReactNode; label: string; to
 
 // --- Header ---
 function AppHeader() {
-  const { tenantName, locTree } = useAppContext();
+  const { tenantName, currentUser, locTree } = useAppContext();
   const [orgPath, setOrgPath] = React.useState<{ id: string; label: string }[]>([]);
   const [locPath, setLocPath] = React.useState<{ id: string; label: string }[]>([]);
   const [showOrgPicker, setShowOrgPicker] = React.useState(false);
   const [showLocPicker, setShowLocPicker] = React.useState(false);
+
+  const availableLocations: TreeNodeData[] = React.useMemo(() => {
+    const orgs = locTree[0]?.children ?? [];
+    if (orgPath.length > 0) {
+      const selectedOrg = orgs.find(o => o.id === orgPath[orgPath.length - 1].id);
+      return selectedOrg?.children ?? [];
+    }
+    return orgs.flatMap(o => o.children ?? []);
+  }, [locTree, orgPath]);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-30 shadow-sm">
@@ -159,6 +168,25 @@ function AppHeader() {
             </span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
+          {showLocPicker && availableLocations.length > 0 && (
+            <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-200 shadow-xl rounded-xl p-2 z-50 max-h-64 overflow-y-auto">
+              <button
+                onClick={() => { setLocPath([]); setShowLocPicker(false); }}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50"
+              >
+                All Locations
+              </button>
+              {availableLocations.map((loc: TreeNodeData) => (
+                <button
+                  key={loc.id}
+                  onClick={() => { setLocPath([{ id: loc.id, label: loc.label }]); setShowLocPicker(false); }}
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 font-medium"
+                >
+                  {loc.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -176,7 +204,9 @@ function AppHeader() {
           <Settings size={16} />
         </NavLink>
         <div className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 px-2 py-1.5 rounded-md transition-colors ml-1">
-          <span className="text-sm font-medium text-slate-700">ivan.stimac</span>
+          <span className="text-sm font-medium text-slate-700">
+            {currentUser?.display_name || currentUser?.email || 'Admin'}
+          </span>
           <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 border border-slate-300">
             <User size={16} />
           </div>

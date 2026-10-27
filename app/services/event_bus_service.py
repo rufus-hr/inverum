@@ -56,19 +56,25 @@ def publish(
     db.add(event)
     db.flush()  # get event.id before commit
 
-    # Import here to avoid circular imports at module load time
-    from app.tasks.process_event import process_event
-    # delay() is called after flush — event exists in DB, task will find it
-    process_event.apply_async(
-        args=[str(event.id)],
-        countdown=0,
-    )
+    # Ensure in-process subscribers (e.g. checklist_subscriber) are imported and executed
+    # synchronously within the same transaction so `asset.is_checklist_pending` is set immediately.
+    import app.subscribers  # noqa: F401
+    process(db, event)
+
+    try:
+        from app.tasks.process_event import process_event
+        process_event.apply_async(
+            args=[str(event.id)],
+            countdown=0,
+        )
+    except Exception:
+        logger.debug("Celery broker unavailable for event %s; already processed in-process", event.id)
 
     return event
 
 
 # ---------------------------------------------------------------------------
-# Process — called by Celery task
+# Process — called synchronously in publish() and idempotently by Celery task
 # ---------------------------------------------------------------------------
 
 def process(db: Session, event: EventBus) -> None:
@@ -76,6 +82,8 @@ def process(db: Session, event: EventBus) -> None:
     Dispatch event to all registered subscribers.
     Marks event as processed or records error.
     """
+    if event.processed_at is not None:
+        return
     errors = []
 
     for subscriber in _subscribers:

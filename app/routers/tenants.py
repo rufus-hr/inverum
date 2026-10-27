@@ -98,7 +98,11 @@ def update_tenant_settings(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     current = dict(tenant.settings or {})
-    for key, value in data.model_dump(exclude_none=True).items():
+    dump = data.model_dump(exclude_none=True)
+    new_tenant_name = dump.pop("tenant_name", None)
+    if new_tenant_name and str(new_tenant_name).strip():
+        tenant.name = str(new_tenant_name).strip()
+    for key, value in dump.items():
         current[key] = value
     tenant.settings = current
     db.commit()

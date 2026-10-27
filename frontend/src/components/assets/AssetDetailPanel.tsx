@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Printer, FileCheck2 } from 'lucide-react';
 import type { Asset, ActivePanel } from '../../types';
 import { HistoryTimeline } from '../HistoryTimeline';
 import { AssetEditForm } from './AssetEditForm';
+import { apiFetch } from '../../lib/api';
 
 interface AssetDetailPanelProps {
   asset: Asset | null;
@@ -10,13 +11,34 @@ interface AssetDetailPanelProps {
   onClose: () => void;
   onSaveEdit: (asset: Asset) => void;
   onPanelChange: (panel: ActivePanel) => void;
-  mockAuditLog: Array<{ id: string; date: string; action: string; user: string; details: string }>;
 }
 
 export function AssetDetailPanel({
-  asset, activePanel, onClose, onSaveEdit, onPanelChange, mockAuditLog,
+  asset, activePanel, onClose, onSaveEdit, onPanelChange,
 }: AssetDetailPanelProps) {
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [historyEvents, setHistoryEvents] = useState<Array<{ id: string; date: string; action: string; user: string; details: string }>>([]);
+
+  useEffect(() => {
+    if (!asset?.id || activePanel !== 'history') return;
+    let cancelled = false;
+    apiFetch<{ items: any[] }>(`/assets/${asset.id}/events?limit=50`)
+      .then(res => {
+        if (cancelled) return;
+        const mapped = (res.items ?? []).map((ev: any) => ({
+          id: ev.id,
+          date: ev.occurred_at ? new Date(ev.occurred_at).toLocaleString() : (ev.created_at ? new Date(ev.created_at).toLocaleString() : '—'),
+          action: ev.event_type || 'Event',
+          user: ev.actor_id ? String(ev.actor_id).slice(0, 8) : 'System',
+          details: ev.description || (ev.metadata ? JSON.stringify(ev.metadata) : `${asset.name} (${asset.inventoryNumber})`),
+        }));
+        setHistoryEvents(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) setHistoryEvents([]);
+      });
+    return () => { cancelled = true; };
+  }, [asset?.id, asset?.name, asset?.inventoryNumber, activePanel]);
 
   if (!asset || !activePanel) return null;
 
@@ -172,7 +194,7 @@ export function AssetDetailPanel({
           )}
 
           {activePanel === 'history' && (
-            <HistoryTimeline events={mockAuditLog} />
+            <HistoryTimeline events={historyEvents} />
           )}
 
           {activePanel === 'edit' && (

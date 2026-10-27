@@ -10,6 +10,7 @@ import { ScannerPlacementModal } from '../components/ScannerModal';
 import type { Asset, TreeNodeData } from '../types';
 import type { PagedResponse, CursorPagedResponse, LocationResponse, AssetResponse } from '../types/api';
 import { useApiQuery, useApiMutation } from '../hooks/useApi';
+import { apiFetch } from '../lib/api';
 
 /* ─── StorageUnitAssetList (inline, only used here) ──────────────────── */
 
@@ -590,10 +591,19 @@ export function LocationsView({ assets = [] }: Partial<LocationsViewProps> = {})
                                     setDragOverShelf(null);
                                     if (!draggingShelfAsset || draggingShelfAsset.fromShelf === shelfKey) return;
                                     const { inv } = draggingShelfAsset;
+                                    const matched = localAssets.find(a => a.inventoryNumber === inv);
                                     setLocalAssets(prev => prev.map(a =>
                                       a.inventoryNumber === inv ? { ...a, locId: shelfKey } : a
                                     ));
                                     setDraggingShelfAsset(null);
+                                    if (matched) {
+                                      void apiFetch(`/assets/${matched.id}`, {
+                                        method: 'PUT',
+                                        body: JSON.stringify({
+                                          custom_fields: { ...(matched.custom_fields || {}), shelf: shelfKey },
+                                        }),
+                                      }).catch(() => {});
+                                    }
                                   }}
                                   className={`relative border rounded-lg p-3 cursor-pointer transition-colors group overflow-hidden
                                     ${isSelected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' :

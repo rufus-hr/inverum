@@ -4,9 +4,9 @@ from pydantic import BaseModel
 
 
 class OrgBase(BaseModel):
-    legal_entity_id: uuid.UUID
+    legal_entity_id: uuid.UUID | None = None
     name: str
-    is_active: bool
+    is_active: bool = True
     parent_id: uuid.UUID | None = None
     classification_level_id: uuid.UUID | None = None
     description: str | None = None

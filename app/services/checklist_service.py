@@ -48,11 +48,15 @@ def trigger_event(
     Set asset.is_checklist_pending = True if any created.
     Returns list of created completions (empty = no block, proceed immediately).
     """
+    event_aliases = {event}
+    if event in ("asset_reassigned", "asset_reassignment_sanitization"):
+        event_aliases = {"asset_reassigned", "asset_reassignment_sanitization"}
+
     templates = (
         db.query(ChecklistTemplate)
         .filter(
             ChecklistTemplate.tenant_id == asset.tenant_id,
-            ChecklistTemplate.trigger_event == event,
+            ChecklistTemplate.trigger_event.in_(event_aliases),
             ChecklistTemplate.is_active == True,
             ChecklistTemplate.deleted_at.is_(None),
         )
@@ -61,6 +65,12 @@ def trigger_event(
 
     # Filter by asset_category (NULL = matches all)
     asset_category = getattr(asset, "category", None)
+    if not asset_category and getattr(asset, "category_id", None):
+        from app.models.asset_category import AssetCategory
+        cat_obj = db.get(AssetCategory, asset.category_id)
+        if cat_obj:
+            asset_category = cat_obj.name
+
     templates = [
         t for t in templates
         if t.asset_category is None or t.asset_category == asset_category

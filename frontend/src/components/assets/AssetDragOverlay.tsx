@@ -1,37 +1,155 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { UserCheck, MapPin, Wrench, Archive } from 'lucide-react';
 import type { Asset } from '../../types';
+import type { EmployeeResponse, LocationResponse } from '../../types/api';
+
+export type AssetDropAction = 'assign' | 'move' | 'service' | 'retire';
 
 interface AssetDragOverlayProps {
-  draggingAssetId: string | null;
-  assets: Asset[];
-  onDragStart: (e: React.DragEvent, asset: Asset) => void;
-  onDragEnd: () => void;
-  onAssignOpen: (id: string) => void;
+  asset: Asset | null;
+  activeAction: AssetDropAction | null;
+  employees: EmployeeResponse[];
+  locations: LocationResponse[];
+  onTargetDrop: (action: AssetDropAction) => void;
+  onAssignEmployee: (employee: EmployeeResponse) => void;
+  onMoveLocation: (location: LocationResponse) => void;
+  onClose: () => void;
 }
 
-export function AssetDragOverlay({ draggingAssetId, assets, onDragStart, onDragEnd, onAssignOpen }: AssetDragOverlayProps) {
-  // Drag ghost creation is handled inside onDragStart in the parent
-  // This component is a thin wrapper to keep drag logic organized
+export function AssetDragOverlay({
+  asset,
+  activeAction,
+  employees,
+  locations,
+  onTargetDrop,
+  onAssignEmployee,
+  onMoveLocation,
+  onClose,
+}: AssetDragOverlayProps) {
+  const [hover, setHover] = useState<AssetDropAction | null>(null);
+  const [empSearch, setEmpSearch] = useState('');
+  const [locSearch, setLocSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleDrop = (e: React.DragEvent, action: string) => {
-    e.preventDefault();
-    if (!draggingAssetId) return;
+  useEffect(() => {
+    if (!activeAction) return;
+    const mouseHandler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) onClose();
+    };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', mouseHandler);
+    document.addEventListener('keydown', keyHandler);
+    return () => {
+      document.removeEventListener('mousedown', mouseHandler);
+      document.removeEventListener('keydown', keyHandler);
+    };
+  }, [activeAction, onClose]);
 
-    if (action === 'assign') {
-      onAssignOpen(draggingAssetId);
-    } else if (action === 'stock') {
-      console.log(`Asset ${draggingAssetId} returned to stock`);
-    } else if (action === 'decommission') {
-      console.log(`Asset ${draggingAssetId} decommissioned`);
-    }
-  };
+  if (!asset) return null;
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
+  const filteredEmployees = employees.filter(e =>
+    `${e.first_name} ${e.last_name} ${e.email ?? ''}`.toLowerCase().includes(empSearch.toLowerCase())
+  );
 
-  return null; // Drop zones rendered inline where needed
+  const filteredLocations = locations.filter(l =>
+    l.name.toLowerCase().includes(locSearch.toLowerCase())
+  );
+
+  const targets: { id: AssetDropAction; label: string; icon: React.ReactNode; activeBg: string; ring: string; iconColor: string }[] = [
+    { id: 'assign',  label: 'Assign',  icon: <UserCheck size={34} strokeWidth={1.6} />, activeBg: 'bg-blue-600 shadow-blue-500/40',    ring: 'ring-blue-300',    iconColor: 'text-blue-500' },
+    { id: 'move',    label: 'Location',icon: <MapPin size={34} strokeWidth={1.6} />,    activeBg: 'bg-emerald-600 shadow-emerald-500/40', ring: 'ring-emerald-300', iconColor: 'text-emerald-500' },
+    { id: 'service', label: 'Service', icon: <Wrench size={34} strokeWidth={1.6} />,    activeBg: 'bg-amber-500 shadow-amber-500/40',   ring: 'ring-amber-300',   iconColor: 'text-amber-500' },
+    { id: 'retire',  label: 'Retire',  icon: <Archive size={34} strokeWidth={1.6} />,   activeBg: 'bg-rose-600 shadow-rose-500/40',     ring: 'ring-rose-300',    iconColor: 'text-rose-500' },
+  ];
+
+  return (
+    <div ref={containerRef} className="fixed right-8 top-1/2 -translate-y-1/2 flex flex-col gap-6 z-[70] select-none">
+      {targets.map(t => {
+        const isActive = hover === t.id || activeAction === t.id;
+        return (
+          <div key={t.id} className="relative flex flex-col items-center gap-1.5">
+            <div
+              className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-all duration-150 cursor-pointer
+                ${isActive
+                  ? `${t.activeBg} shadow-2xl ring-4 ${t.ring} scale-110 text-white`
+                  : 'bg-white/95 backdrop-blur-sm shadow-xl ring-1 ring-slate-200/90 hover:scale-105'}`}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setHover(t.id); }}
+              onDragLeave={() => setHover(null)}
+              onDrop={e => { e.preventDefault(); setHover(null); onTargetDrop(t.id); }}
+            >
+              <span className={isActive ? 'text-white' : t.iconColor}>{t.icon}</span>
+            </div>
+            <span className={`text-[11px] font-bold tracking-wider uppercase transition-colors ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>
+              {t.label}
+            </span>
+
+            {activeAction === 'assign' && t.id === 'assign' && (
+              <div className="absolute right-full top-0 mr-3 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                  Assign {asset.inventoryNumber} to:
+                </p>
+                <input
+                  autoFocus
+                  type="text"
+                  value={empSearch}
+                  onChange={e => setEmpSearch(e.target.value)}
+                  placeholder="Filter employees..."
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                  {filteredEmployees.map(emp => (
+                    <button
+                      key={emp.id}
+                      onClick={() => onAssignEmployee(emp)}
+                      className="w-full text-left px-2.5 py-2 hover:bg-blue-50 rounded-lg transition-colors flex flex-col"
+                    >
+                      <span className="text-xs font-semibold text-slate-800">{emp.first_name} {emp.last_name}</span>
+                      {emp.email && <span className="text-[10px] text-slate-400 truncate">{emp.email}</span>}
+                    </button>
+                  ))}
+                  {filteredEmployees.length === 0 && (
+                    <p className="text-xs text-slate-400 py-3 text-center">No employees found</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeAction === 'move' && t.id === 'move' && (
+              <div className="absolute right-full top-0 mr-3 w-64 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 z-50">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
+                  Move {asset.inventoryNumber} to:
+                </p>
+                <input
+                  autoFocus
+                  type="text"
+                  value={locSearch}
+                  onChange={e => setLocSearch(e.target.value)}
+                  placeholder="Filter locations..."
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                  {filteredLocations.map(loc => (
+                    <button
+                      key={loc.id}
+                      onClick={() => onMoveLocation(loc)}
+                      className="w-full text-left px-2.5 py-2 hover:bg-emerald-50 rounded-lg transition-colors text-xs font-medium text-slate-700"
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
+                  {filteredLocations.length === 0 && (
+                    <p className="text-xs text-slate-400 py-3 text-center">No locations found</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // Export drag start handler creator

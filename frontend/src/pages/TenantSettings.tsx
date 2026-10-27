@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Building2, Shield, KeyRound, Puzzle, Plug, Layers, Hash, Database,
   Award, Users, Bot, FileText, Tag, ChevronDown,
-  Plus, Check, BarChart2, UserCog,
+  Plus, Check, X, BarChart2, UserCog,
 } from 'lucide-react';
 import {
-  SettingsContext, AssetCategory, NamingSchema, TenantConfigData,
+  SettingsContext, AssetCategory, NamingSchema, TenantConfigData, OrgScopeItem,
   INITIAL_CATEGORIES, INITIAL_NAMING_SCHEMAS, apiFetch,
 } from '../components/settings/SettingsShared';
+import type { PagedResponse, OrganizationResponse } from '../types/api';
 import {
   GeneralOrgTab, GeneralTab, LegalTab, SecurityTab, SSOTab,
 } from '../components/settings/AccountAndSecurityTabs';
@@ -58,12 +59,12 @@ const NAV: NavGroup[] = [
   ]},
 ];
 
-const ORGS = [
-  { id: 'tenant', name: 'Hrvatska Pošta d.d.', sub: 'Tenant settings', isTenant: true },
-  { id: 'org1',   name: 'HP Logistika',        sub: 'Legal entity · HR', isTenant: false },
-  { id: 'org2',   name: 'HP Express',           sub: 'Division · HR',     isTenant: false },
-  { id: 'org3',   name: 'HP Nekretnine',        sub: 'Subsidiary · HR',   isTenant: false },
-];
+const DEFAULT_TENANT_SCOPE: OrgScopeItem = {
+  id: 'tenant',
+  name: 'Tenant',
+  sub: 'Tenant settings',
+  isTenant: true,
+};
 
 const ORG_SCOPED: NavId[] = ['general', 'legal', 'security', 'sso', 'users', 'integrations', 'naming', 'certificates', 'reports'];
 
@@ -90,30 +91,91 @@ const FULL_HEIGHT_TABS: NavId[] = ['sso', 'permissions', 'reports'];
 
 export default function TenantSettings() {
   const [active, setActive] = useState<NavId>('general');
-  const [selectedOrg, setSelectedOrg] = useState(ORGS[0]);
+  const [orgs, setOrgs] = useState<OrgScopeItem[]>([DEFAULT_TENANT_SCOPE]);
+  const [selectedOrg, setSelectedOrg] = useState<OrgScopeItem>(DEFAULT_TENANT_SCOPE);
   const [orgDropdown, setOrgDropdown] = useState(false);
+  const [addingOrg, setAddingOrg] = useState(false);
+  const [newOrgName, setNewOrgName] = useState('');
   const [assetCategories, setAssetCategories] = useState<AssetCategory[]>(INITIAL_CATEGORIES);
   const [namingSchemas,   setNamingSchemas]   = useState<NamingSchema[]>(INITIAL_NAMING_SCHEMAS);
   const [tenantConfig, setTenantConfig] = useState<TenantConfigData | null>(null);
 
+  const loadOrgs = useCallback((tName?: string) => {
+    const rootItem: OrgScopeItem = {
+      id: 'tenant',
+      name: tName || tenantConfig?.name || 'Tenant',
+      sub: 'Tenant settings',
+      isTenant: true,
+    };
+    apiFetch<PagedResponse<OrganizationResponse> | OrganizationResponse[]>('/organizations/?limit=100')
+      .then((res) => {
+        const items = Array.isArray(res) ? res : (res?.items ?? []);
+        const mapped: OrgScopeItem[] = items.map(o => ({
+          id: o.id,
+          name: o.name,
+          sub: o.description || 'Organization',
+          isTenant: false,
+          description: o.description,
+        }));
+        const all = [rootItem, ...mapped];
+        setOrgs(all);
+        setSelectedOrg(prev => all.find(x => x.id === prev.id) ?? rootItem);
+      })
+      .catch(() => {
+        setOrgs([rootItem]);
+        setSelectedOrg(prev => prev.isTenant ? rootItem : prev);
+      });
+  }, [tenantConfig?.name]);
+
   useEffect(() => {
     apiFetch<TenantConfigData>('/tenants/config')
-      .then(setTenantConfig)
-      .catch(() => {});
-  }, []);
+      .then((cfg) => {
+        setTenantConfig(cfg);
+        if (cfg.settings?.naming_schemas && Array.isArray(cfg.settings.naming_schemas) && cfg.settings.naming_schemas.length > 0) {
+          setNamingSchemas(cfg.settings.naming_schemas);
+        }
+        loadOrgs(cfg.name);
+      })
+      .catch(() => {
+        loadOrgs();
+      });
+  }, [loadOrgs]);
+
+  const handleCreateOrg = async () => {
+    if (!newOrgName.trim()) return;
+    const trimmed = newOrgName.trim();
+    try {
+      const created = await apiFetch<OrganizationResponse>('/organizations/', {
+        method: 'POST',
+        body: JSON.stringify({ name: trimmed, is_active: true }),
+      });
+      setNewOrgName('');
+      setAddingOrg(false);
+      loadOrgs();
+      selectOrg({
+        id: created.id,
+        name: created.name,
+        sub: created.description || 'Organization',
+        isTenant: false,
+        description: created.description,
+      });
+    } catch {
+      setAddingOrg(false);
+    }
+  };
 
   const isOrg = !selectedOrg.isTenant;
   const ActiveComponent = (isOrg && active === 'general') ? GeneralOrgTab : TAB_COMPONENTS[active];
   const isFullHeight = FULL_HEIGHT_TABS.includes(active);
 
-  const selectOrg = (org: typeof ORGS[0]) => {
+  const selectOrg = (org: OrgScopeItem) => {
     setSelectedOrg(org);
     setOrgDropdown(false);
     if (!org.isTenant && !ORG_SCOPED.includes(active)) setActive('general');
   };
 
   return (
-    <SettingsContext.Provider value={{ isOrg, assetCategories, setAssetCategories, namingSchemas, setNamingSchemas, tenantConfig, setTenantConfig }}>
+    <SettingsContext.Provider value={{ isOrg, selectedOrg, refreshOrgs: () => loadOrgs(), assetCategories, setAssetCategories, namingSchemas, setNamingSchemas, tenantConfig, setTenantConfig }}>
       <div className="flex h-full bg-theme-bg text-theme-text">
         <aside className="w-56 shrink-0 border-r border-theme-border bg-theme-surface flex flex-col">
           <div className="p-3 border-b border-theme-border relative">
@@ -132,7 +194,7 @@ export default function TenantSettings() {
                 <div className="px-3 py-1.5 border-b border-theme-border">
                   <p className="text-[10px] font-semibold text-theme-text-subtle uppercase tracking-wider">Configure scope</p>
                 </div>
-                {ORGS.map((org) => (
+                {orgs.map((org) => (
                   <button key={org.id} onClick={() => selectOrg(org)} className={`w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-theme-surface-hover transition-colors ${selectedOrg.id === org.id ? 'bg-theme-surface-hover' : ''}`}>
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${org.isTenant ? 'bg-theme-primary' : 'bg-emerald-500'}`} />
                     <div className="min-w-0 flex-1">
@@ -143,9 +205,24 @@ export default function TenantSettings() {
                   </button>
                 ))}
                 <div className="border-t border-theme-border px-3 py-2">
-                  <button className="flex items-center gap-1.5 text-theme-xs text-theme-primary hover:text-theme-primary-hover transition-colors">
-                    <Plus size={12} /> Add organization
-                  </button>
+                  {addingOrg ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={newOrgName}
+                        onChange={e => setNewOrgName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleCreateOrg(); if (e.key === 'Escape') { setAddingOrg(false); setNewOrgName(''); } }}
+                        placeholder="Org name..."
+                        className="w-full text-theme-xs bg-theme-bg border border-theme-border rounded px-2 py-1 text-theme-text focus:outline-none focus:border-theme-primary"
+                      />
+                      <button onClick={handleCreateOrg} className="p-1 text-emerald-600 hover:text-emerald-700"><Check size={12} /></button>
+                      <button onClick={() => { setAddingOrg(false); setNewOrgName(''); }} className="p-1 text-theme-text-subtle hover:text-theme-text"><X size={12} /></button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setAddingOrg(true)} className="flex items-center gap-1.5 text-theme-xs text-theme-primary hover:text-theme-primary-hover transition-colors">
+                      <Plus size={12} /> Add organization
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -184,7 +261,7 @@ export default function TenantSettings() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Configuring <strong>{selectedOrg.name}</strong> — organization-scoped settings only.
               </span>
-              <button onClick={() => selectOrg(ORGS[0])} className="text-theme-xs text-theme-text-muted hover:text-theme-text transition-colors">
+              <button onClick={() => selectOrg(orgs[0])} className="text-theme-xs text-theme-text-muted hover:text-theme-text transition-colors">
                 Switch to tenant →
               </button>
             </div>

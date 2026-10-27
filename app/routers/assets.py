@@ -72,8 +72,53 @@ def update_asset(
     ).first()
     if not a:
         raise HTTPException(status_code=404, detail="Asset not found")
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(a, field, value)
+
+    prev_custom = dict(a.custom_fields or {})
+    prev_status = prev_custom.get("lifecycle_status") or ("active" if a.is_active else "retired")
+
+    dump = data.model_dump(exclude_unset=True)
+    new_status = dump.pop("status", None)
+
+    for field, value in dump.items():
+        if hasattr(a, field):
+            setattr(a, field, value)
+
+    if new_status:
+        cf = dict(a.custom_fields or {})
+        cf["lifecycle_status"] = new_status
+        a.custom_fields = cf
+        if new_status in ("retired", "decommissioned"):
+            a.is_active = False
+        elif new_status in ("active", "in_stock", "in_service", "in_repair"):
+            a.is_active = True
+
+        # Non-blocking SOP checklist trigger on lifecycle transitions
+        from app.services import event_bus_service
+        event_type = None
+        if new_status in ("in_service", "in_repair") and prev_status not in ("in_service", "in_repair"):
+            event_type = "asset_to_service"
+        elif new_status in ("retired", "decommissioned") and prev_status not in ("retired", "decommissioned"):
+            event_type = "asset_retired"
+        elif prev_status in ("in_service", "in_repair") and new_status in ("in_stock", "active"):
+            event_type = "asset_from_service"
+
+        if event_type:
+            event_bus_service.publish(
+                db=db,
+                tenant_id=user.tenant_id,
+                event_type=event_type,
+                entity_type="asset",
+                entity_id=a.id,
+                payload={
+                    "pending_transition": {
+                        "type": "status_change",
+                        "from_status": prev_status,
+                        "to_status": new_status,
+                    },
+                    "triggered_by_user_id": str(user.id),
+                },
+            )
+
     db.commit()
     db.refresh(a)
     return a

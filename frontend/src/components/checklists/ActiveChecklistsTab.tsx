@@ -4,7 +4,7 @@ import {
   ChevronRight, X, Check, Lock, FileText, MapPin, Eye,
 } from 'lucide-react';
 import {
-  ChecklistCompletion, CompletionStatus, StatusFilter,
+  ChecklistCompletion, CompletionStatus, StatusFilter, SopTemplate,
   CURRENT_USER, INITIAL_TEMPLATES, USER_GROUPS,
   relativeDate, formatDateTime, getTriggerBadge, getAssetIcon,
 } from './ChecklistTypesAndHelpers';
@@ -13,12 +13,14 @@ import {
 
 export function ActiveChecklistsTab({
   completions,
+  templates = INITIAL_TEMPLATES,
   onUpdateCompletions,
   onToggleItemApi,
   onSubmitCompletionApi,
   onConfirmCompletionApi,
 }: {
   completions: ChecklistCompletion[];
+  templates?: SopTemplate[];
   onUpdateCompletions: (updated: ChecklistCompletion[]) => void;
   onToggleItemApi?: (completionId: string, itemId: string, checked: boolean, note: string | null) => void;
   onSubmitCompletionApi?: (completionId: string) => void;
@@ -287,6 +289,7 @@ export function ActiveChecklistsTab({
       {selected && (
         <CompletionDetailPanel
           completion={selected}
+          templates={templates}
           onClose={() => setSelectedId(null)}
           onToggleItem={(itemId) => toggleItem(selected.id, itemId)}
           onSubmit={() => submitCompletion(selected.id)}
@@ -306,6 +309,7 @@ export function ActiveChecklistsTab({
 
 export function CompletionDetailPanel({
   completion,
+  templates = INITIAL_TEMPLATES,
   onClose,
   onToggleItem,
   onSubmit,
@@ -317,6 +321,7 @@ export function CompletionDetailPanel({
   onNoteInputChange,
 }: {
   completion: ChecklistCompletion;
+  templates?: SopTemplate[];
   onClose: () => void;
   onToggleItem: (itemId: string) => void;
   onSubmit: () => void;
@@ -479,7 +484,7 @@ export function CompletionDetailPanel({
         </div>
 
         {completion.requiresConfirmation && (() => {
-          const tpl = INITIAL_TEMPLATES.find(t => t.id === completion.templateId);
+          const tpl = templates.find(t => t.id === completion.templateId) ?? INITIAL_TEMPLATES.find(t => t.id === completion.templateId);
           const groupName = tpl?.confirmationGroupId ? USER_GROUPS.find(g => g.id === tpl.confirmationGroupId)?.name : null;
           return (
             <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">

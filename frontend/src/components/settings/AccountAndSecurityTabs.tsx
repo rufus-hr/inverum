@@ -17,11 +17,19 @@ import type { PagedResponse } from '../../types/api';
 // ---------------------------------------------------------------------------
 
 export function GeneralOrgTab() {
-  const [friendlyName, setFriendlyName] = useState('HP Logistika');
+  const { selectedOrg, tenantConfig, refreshOrgs } = useContext(SettingsContext);
+  const [friendlyName, setFriendlyName] = useState(selectedOrg.name);
   const [orgType, setOrgType] = useState('Legal entity');
-  const [parent, setParent] = useState('Hrvatska Pošta d.d.');
-  const [contact, setContact] = useState('Marko Kovač');
-  const [description, setDescription] = useState('Logistika i distribucija');
+  const [parent, setParent] = useState(tenantConfig?.name || '— none —');
+  const [contact, setContact] = useState('');
+  const [description, setDescription] = useState(selectedOrg.description || '');
+
+  useEffect(() => {
+    setFriendlyName(selectedOrg.name);
+    setDescription(selectedOrg.description || '');
+    if (tenantConfig?.name) setParent(tenantConfig.name);
+  }, [selectedOrg, tenantConfig?.name]);
+
   return (
     <div className="max-w-2xl">
       <SectionHeader title="Organization Identity" description="Branding and display settings for this organization" />
@@ -39,7 +47,7 @@ export function GeneralOrgTab() {
         <Select value={orgType} onChange={setOrgType} options={['Legal entity', 'Division', 'Branch', 'Department', 'Subsidiary']} className="w-44" />
       </SettingRow>
       <SettingRow label="Parent Organization" description="Leave empty if top-level">
-        <Select value={parent} onChange={setParent} options={['— none —', 'Hrvatska Pošta d.d.', 'HP d.d. (Holding)']} className="w-52" />
+        <Select value={parent} onChange={setParent} options={['— none —', ...(tenantConfig?.name ? [tenantConfig.name] : [])]} className="w-52" />
       </SettingRow>
       <SettingRow label="Primary Contact / Manager">
         <Input value={contact} onChange={setContact} className="w-44" />
@@ -47,7 +55,16 @@ export function GeneralOrgTab() {
       <SettingRow label="Description" description="Internal note, not shown to end users">
         <Input value={description} onChange={setDescription} className="w-56" />
       </SettingRow>
-      <SaveBar onSave={() => {}} />
+      <SaveBar onSave={() => {
+        if (selectedOrg.isTenant) return;
+        apiFetch(`/organizations/${selectedOrg.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: friendlyName.trim() || selectedOrg.name,
+            description: description.trim() || null,
+          }),
+        }).then(() => refreshOrgs()).catch(() => {});
+      }} />
     </div>
   );
 }
@@ -74,7 +91,7 @@ interface SystemLicenseStatus {
 }
 
 export function GeneralTab() {
-  const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const { tenantConfig, setTenantConfig, refreshOrgs } = useContext(SettingsContext);
   const s = tenantConfig?.settings;
   const [tenantName, setTenantName] = useState('');
   const [country, setCountry] = useState('Croatia');
@@ -120,10 +137,13 @@ export function GeneralTab() {
   useEffect(() => {
     if (!tenantConfig) return;
     setTenantName(tenantConfig.name);
+    if (s?.country) setCountry(s.country);
     if (s?.currency) setCurrency(s.currency === 'EUR' ? 'EUR — Euro' : s.currency === 'USD' ? 'USD — Dollar' : s.currency === 'GBP' ? 'GBP — Pound' : s.currency);
     if (s?.timezone) setTimezone(s.timezone);
     if (s?.language) setLanguage(s.language === 'hr' ? 'Hrvatski' : s.language === 'de' ? 'Deutsch' : s.language === 'sl' ? 'Slovenščina' : 'English');
     if (s?.date_format) setDateFormat(s.date_format);
+    if (s?.decimal_separator) setDecimal(s.decimal_separator);
+    if (s?.csv_separator) setCsvSeparator(s.csv_separator);
   }, [tenantConfig, s]);
 
   return (
@@ -225,12 +245,19 @@ export function GeneralTab() {
         apiFetch<TenantConfigData>('/tenants/config/settings', {
           method: 'PATCH',
           body: JSON.stringify({
+            tenant_name: tenantName.trim() || undefined,
+            country,
             currency: curMap[currency] ?? currency,
             timezone,
             date_format: dateFormat,
             language: langMap[language] ?? language,
+            decimal_separator: decimal,
+            csv_separator: csvSeparator,
           }),
-        }).then(setTenantConfig).catch(() => {});
+        }).then((cfg) => {
+          setTenantConfig(cfg);
+          refreshOrgs();
+        }).catch(() => {});
       }} />
     </div>
   );
@@ -254,20 +281,19 @@ interface ApiLegalEntity {
 }
 
 export function LegalTab() {
+  const { tenantConfig } = useContext(SettingsContext);
   const { data: legalData, refetch: refetchLegal } = useApiQuery<PagedResponse<ApiLegalEntity> | ApiLegalEntity[]>('/legal-entities/?limit=50');
   const [entityId, setEntityId] = useState<string | null>(null);
-  const [legalName, setLegalName] = useState('Hrvatska Pošta d.d.');
+  const [legalName, setLegalName] = useState(tenantConfig?.name || '');
   const [country, setCountry] = useState('Croatia (HR)');
-  const [address, setAddress] = useState('Jurišićeva ulica 13, 10000 Zagreb');
-  const [iban, setIban] = useState('HR1210010051863000160');
-  const [responsible, setResponsible] = useState('Ivan Horvat');
-  const [contactEmail, setContactEmail] = useState('poslovanje@posta.hr');
+  const [address, setAddress] = useState('');
+  const [iban, setIban] = useState('');
+  const [responsible, setResponsible] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
 
   const [identifiers, setIdentifiers] = useState<LegalId[]>([
-    { id: '1', label: 'OIB', value: '12345678901' },
-    { id: '2', label: 'MB', value: '1234567' },
-    { id: '3', label: 'MBS', value: '080123456' },
-    { id: '4', label: 'VAT Number', value: 'HR12345678901' },
+    { id: '1', label: 'OIB', value: '' },
+    { id: '2', label: 'VAT Number', value: '' },
   ]);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -276,7 +302,10 @@ export function LegalTab() {
   useEffect(() => {
     const list = Array.isArray(legalData) ? legalData : legalData?.items;
     const first = list?.[0];
-    if (!first) return;
+    if (!first) {
+      if (tenantConfig?.name && !legalName) setLegalName(tenantConfig.name);
+      return;
+    }
     setEntityId(first.id);
     if (first.legal_name) setLegalName(first.legal_name);
     if (first.address) setAddress(first.address);
@@ -290,7 +319,7 @@ export function LegalTab() {
         value: String(v),
       })));
     }
-  }, [legalData]);
+  }, [legalData, tenantConfig?.name, legalName]);
 
   const addId = () => {
     if (!newLabel.trim()) return;
@@ -381,8 +410,9 @@ export function LegalTab() {
 // ---------------------------------------------------------------------------
 
 export function SecurityTab() {
-  const { isOrg } = useContext(SettingsContext);
+  const { isOrg, tenantConfig, setTenantConfig } = useContext(SettingsContext);
   const Row = isOrg ? OrgSettingRow : SettingRow;
+  const sec = tenantConfig?.settings?.security as Record<string, unknown> | undefined;
 
   const [enforce2fa, setEnforce2fa] = useState(true);
   const [sessionTimeout, setSessionTimeout] = useState('8 hours');
@@ -399,6 +429,25 @@ export function SecurityTab() {
   const [mismatch, setMismatch] = useState<'allow' | 'warn' | 'block'>('warn');
   const [fourEyes, setFourEyes] = useState(false);
   const [requireReason, setRequireReason] = useState(true);
+
+  useEffect(() => {
+    if (!sec) return;
+    if (typeof sec.enforce2fa === 'boolean') setEnforce2fa(sec.enforce2fa);
+    if (typeof sec.sessionTimeout === 'string') setSessionTimeout(sec.sessionTimeout);
+    if (typeof sec.localAuth === 'boolean') setLocalAuth(sec.localAuth);
+    if (typeof sec.ldapAuth === 'boolean') setLdapAuth(sec.ldapAuth);
+    if (typeof sec.m365Auth === 'boolean') setM365Auth(sec.m365Auth);
+    if (typeof sec.googleAuth === 'boolean') setGoogleAuth(sec.googleAuth);
+    if (typeof sec.samlAuth === 'boolean') setSamlAuth(sec.samlAuth);
+    if (typeof sec.minLength === 'string') setMinLength(sec.minLength);
+    if (typeof sec.pwUppercase === 'boolean') setPwUppercase(sec.pwUppercase);
+    if (typeof sec.pwNumber === 'boolean') setPwNumber(sec.pwNumber);
+    if (typeof sec.pwSpecial === 'boolean') setPwSpecial(sec.pwSpecial);
+    if (typeof sec.pwExpiry === 'string') setPwExpiry(sec.pwExpiry);
+    if (sec.mismatch === 'allow' || sec.mismatch === 'warn' || sec.mismatch === 'block') setMismatch(sec.mismatch);
+    if (typeof sec.fourEyes === 'boolean') setFourEyes(sec.fourEyes);
+    if (typeof sec.requireReason === 'boolean') setRequireReason(sec.requireReason);
+  }, [sec]);
 
   return (
     <div className="max-w-2xl">
@@ -446,7 +495,30 @@ export function SecurityTab() {
       <Row label="4-Eyes Principle" description="Sensitive actions require approval from a second user" tenantValue="Disabled"><Toggle value={fourEyes} onChange={setFourEyes} /></Row>
       <div className="mt-8"><SectionHeader title="Asset Security" /></div>
       <Row label="Require Reason on Decommission" description="User must enter a reason when decommissioning an asset" tenantValue="Enabled"><Toggle value={requireReason} onChange={setRequireReason} /></Row>
-      <SaveBar onSave={() => {}} />
+      <SaveBar onSave={() => {
+        apiFetch<TenantConfigData>('/tenants/config/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({
+            security: {
+              enforce2fa,
+              sessionTimeout,
+              localAuth,
+              ldapAuth,
+              m365Auth,
+              googleAuth,
+              samlAuth,
+              minLength,
+              pwUppercase,
+              pwNumber,
+              pwSpecial,
+              pwExpiry,
+              mismatch,
+              fourEyes,
+              requireReason,
+            },
+          }),
+        }).then(setTenantConfig).catch(() => {});
+      }} />
     </div>
   );
 }
@@ -458,7 +530,7 @@ export function SecurityTab() {
 interface GroupMapping { id: string; adGroup: string; role: string; scope: 'direct' | 'nested'; }
 interface AttrMapping { id: string; adAttr: string; field: string; }
 
-function LdapBasicPanel({ getField, setField }: { getField: (l: string) => string; setField: (l: string, v: string) => void }) {
+function LdapBasicPanel({ getField, setField, onSave }: { getField: (l: string) => string; setField: (l: string, v: string) => void; onSave: () => void }) {
   return (
     <div className="space-y-3">
       {[
@@ -476,7 +548,7 @@ function LdapBasicPanel({ getField, setField }: { getField: (l: string) => strin
         <button className="px-3 py-1.5 text-theme-xs bg-theme-bg hover:bg-theme-surface-hover text-theme-text rounded border border-theme-border transition-colors">
           Test Connection
         </button>
-        <button className="px-3 py-1.5 text-theme-xs bg-theme-primary hover:bg-theme-primary-hover text-theme-primary-fg rounded transition-colors">
+        <button onClick={onSave} className="px-3 py-1.5 text-theme-xs bg-theme-primary hover:bg-theme-primary-hover text-theme-primary-fg rounded transition-colors">
           Save
         </button>
       </div>
@@ -736,21 +808,48 @@ function LdapAdvancedPanel({ isEnterprise }: { isEnterprise: boolean }) {
 }
 
 export function SSOTab() {
-  const { isOrg } = useContext(SettingsContext);
+  const { isOrg, tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const ssoCfg = tenantConfig?.settings?.sso as Record<string, unknown> | undefined;
   const [selected, setSelected] = useState<string>('ldap');
   const [orgOverrides, setOrgOverrides] = useState<Record<string, boolean>>({});
   const [isEnterprise] = useState(true);
   const [ldapSection, setLdapSection] = useState<'basic' | 'advanced'>('basic');
   const [ldapFields, setLdapFields] = useState<Record<string, string>>({
-    'LDAP URL': 'ldaps://ad.posta.hr:636',
-    'Bind DN': 'CN=svc-inverum,OU=Service,DC=posta,DC=hr',
-    'Base DN': 'DC=posta,DC=hr',
+    'LDAP URL': 'ldaps://ad.example.com:636',
+    'Bind DN': 'CN=svc-inverum,OU=Service,DC=example,DC=com',
+    'Base DN': 'DC=example,DC=com',
     'User Filter': '(sAMAccountName={username})',
   });
   const [oauthFields, setOauthFields] = useState<Record<string, string>>({});
   const getOAuth = (id: string, f: string) => oauthFields[`${id}-${f}`] ?? '';
   const setOAuth = (id: string, f: string, v: string) => setOauthFields(p => ({ ...p, [`${id}-${f}`]: v }));
   const [m365DeactivateOnDisable, setM365DeactivateOnDisable] = useState(true);
+
+  useEffect(() => {
+    if (!ssoCfg) return;
+    if (ssoCfg.ldapFields && typeof ssoCfg.ldapFields === 'object') {
+      setLdapFields(prev => ({ ...prev, ...(ssoCfg.ldapFields as Record<string, string>) }));
+    }
+    if (ssoCfg.oauthFields && typeof ssoCfg.oauthFields === 'object') {
+      setOauthFields(ssoCfg.oauthFields as Record<string, string>);
+    }
+    if (typeof ssoCfg.m365DeactivateOnDisable === 'boolean') {
+      setM365DeactivateOnDisable(ssoCfg.m365DeactivateOnDisable);
+    }
+  }, [ssoCfg]);
+
+  const saveSso = () => {
+    apiFetch<TenantConfigData>('/tenants/config/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        sso: {
+          ldapFields,
+          oauthFields,
+          m365DeactivateOnDisable,
+        },
+      }),
+    }).then(setTenantConfig).catch(() => {});
+  };
 
   type Provider = { id: string; name: string; icon: React.ReactNode; tier: 'opensource' | 'enterprise'; status: 'active' | 'connected' | 'disabled'; fields?: string[]; };
   const providers: Provider[] = [
@@ -832,7 +931,7 @@ export function SSOTab() {
                 ))}
               </div>
               {ldapSection === 'basic'
-                ? <LdapBasicPanel getField={(l) => ldapFields[l] ?? ''} setField={(l, v) => setLdapFields(p => ({ ...p, [l]: v }))} />
+                ? <LdapBasicPanel getField={(l) => ldapFields[l] ?? ''} setField={(l, v) => setLdapFields(p => ({ ...p, [l]: v }))} onSave={saveSso} />
                 : <LdapAdvancedPanel isEnterprise={isEnterprise} />
               }
             </>
@@ -862,7 +961,7 @@ export function SSOTab() {
             ))}
             <div className="flex gap-2 pt-2">
               <button className="px-3 py-1.5 text-theme-xs bg-theme-bg hover:bg-theme-surface-hover text-theme-text rounded border border-theme-border transition-colors">Test Connection</button>
-              <button className="px-3 py-1.5 text-theme-xs bg-theme-primary hover:bg-theme-primary-hover text-theme-primary-fg rounded transition-colors">Save</button>
+              <button onClick={saveSso} className="px-3 py-1.5 text-theme-xs bg-theme-primary hover:bg-theme-primary-hover text-theme-primary-fg rounded transition-colors">Save</button>
             </div>
             {cur.id === 'm365' && (
               <div className="mt-6">

@@ -55,6 +55,8 @@ export interface AssetResponse {
   notes: string | null;
   custom_fields: Record<string, any> | null;
   is_active: boolean;
+  is_checklist_pending?: boolean;
+  pending_transition?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -87,6 +89,8 @@ export interface OrganizationResponse {
   id: string;
   tenant_id: string;
   name: string;
+  description?: string | null;
+  is_active?: boolean;
   legal_entity_id: string | null;
   parent_id: string | null;
   location_count?: number;

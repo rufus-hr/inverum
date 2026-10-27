@@ -50,7 +50,19 @@ def create_organization(
     user: User = Depends(require_permission("organization:create")),
     db: Session = Depends(get_db),
 ):
-    org = Organization(**data.model_dump(), tenant_id=user.tenant_id)
+    payload = data.model_dump()
+    if not payload.get("legal_entity_id"):
+        from app.models.legal_entities import LegalEntity
+        le = db.query(LegalEntity).filter(
+            LegalEntity.tenant_id == user.tenant_id,
+            LegalEntity.deleted_at.is_(None),
+        ).first()
+        if not le:
+            le = LegalEntity(tenant_id=user.tenant_id, legal_name=data.name, identifiers={})
+            db.add(le)
+            db.flush()
+        payload["legal_entity_id"] = le.id
+    org = Organization(**payload, tenant_id=user.tenant_id)
     db.add(org)
     db.commit()
     db.refresh(org)

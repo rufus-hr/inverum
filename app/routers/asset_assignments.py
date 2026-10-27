@@ -81,12 +81,6 @@ def assign_asset(
             detail="Asset has mobility_type='fixed' and cannot be assigned to a user or workplace",
         )
 
-    if asset.is_checklist_pending:
-        raise HTTPException(
-            status_code=422,
-            detail="Asset has a pending checklist — complete or cancel it before reassigning",
-        )
-
     existing = _active_assignment(db, asset.id)
     event_type = "asset_reassigned" if existing else "asset_assigned"
 
@@ -149,12 +143,6 @@ def return_asset(
         raise HTTPException(status_code=404, detail="Assignment not found or already returned")
 
     asset = _get_asset(db, a.asset_id, user.tenant_id)
-
-    if asset.is_checklist_pending:
-        raise HTTPException(
-            status_code=422,
-            detail="Asset has a pending checklist — complete or cancel it before returning",
-        )
 
     event_bus_service.publish(
         db=db,

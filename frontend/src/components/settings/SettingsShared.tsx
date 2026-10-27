@@ -22,6 +22,15 @@ export interface NamingSchema  {
   org: string;
 }
 
+export interface OrgScopeItem {
+  id: string;
+  name: string;
+  sub: string;
+  isTenant: boolean;
+  code?: string;
+  description?: string | null;
+}
+
 export interface TenantConfigData {
   tenant_id: string;
   name: string;
@@ -32,6 +41,15 @@ export interface TenantConfigData {
     date_format?: string;
     language?: string;
     fiscal_year_start?: string;
+    country?: string;
+    decimal_separator?: string;
+    csv_separator?: string;
+    security?: Record<string, unknown>;
+    sso?: Record<string, unknown>;
+    pki?: Record<string, unknown>;
+    naming_schemas?: NamingSchema[];
+    report_schedules?: Array<Record<string, unknown>>;
+    webhooks?: Array<Record<string, unknown>>;
   };
   modules: Record<string, boolean>;
 }
@@ -73,6 +91,8 @@ export const INITIAL_NAMING_SCHEMAS: NamingSchema[] = [
 
 export const SettingsContext = createContext<{
   isOrg: boolean;
+  selectedOrg: OrgScopeItem;
+  refreshOrgs: () => void;
   assetCategories: AssetCategory[];
   setAssetCategories: React.Dispatch<React.SetStateAction<AssetCategory[]>>;
   namingSchemas: NamingSchema[];
@@ -81,6 +101,8 @@ export const SettingsContext = createContext<{
   setTenantConfig: React.Dispatch<React.SetStateAction<TenantConfigData | null>>;
 }>({
   isOrg: false,
+  selectedOrg: { id: 'tenant', name: 'Tenant', sub: 'Tenant settings', isTenant: true },
+  refreshOrgs: () => {},
   assetCategories: INITIAL_CATEGORIES,
   setAssetCategories: () => {},
   namingSchemas: INITIAL_NAMING_SCHEMAS,

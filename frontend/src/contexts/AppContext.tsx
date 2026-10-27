@@ -1,9 +1,23 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { TreeNodeData } from '../types';
 
+interface CurrentUserProfile {
+  id: string;
+  display_name: string;
+  email?: string | null;
+}
+
+interface OrgSummary {
+  id: string;
+  name: string;
+  legal_entity_id?: string | null;
+}
+
 interface AppContextValue {
   tenantName: string;
   setTenantName: (name: string) => void;
+  currentUser: CurrentUserProfile | null;
+  organizations: OrgSummary[];
   locTree: TreeNodeData[];
   setLocTree: (tree: TreeNodeData[]) => void;
   assetCategories: { id: string; label: string; icon: React.ReactNode; types: string[] }[];
@@ -16,13 +30,19 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [tenantName, setTenantName] = useState('');
+  const [currentUser, setCurrentUser] = useState<CurrentUserProfile | null>(null);
+  const [organizations, setOrganizations] = useState<OrgSummary[]>([]);
   const [locTree, setLocTree] = useState<TreeNodeData[]>([]);
   const [assetCategories, setAssetCategories] = useState<{ id: string; label: string; icon: React.ReactNode; types: string[] }[]>([]);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
 
-  // Fetch orgs, locations, tenant config, asset categories on mount
+  // Fetch orgs, locations, tenant config, current user, asset categories on mount
   useEffect(() => {
     import('../lib/api').then(({ apiFetch }) => {
+      apiFetch<CurrentUserProfile>('/users/me')
+        .then(u => setCurrentUser(u))
+        .catch(() => {});
+
       apiFetch<{ name: string }>('/tenants/config')
         .then(resp => { if (resp.name) setTenantName(resp.name); })
         .catch(() => {});
@@ -32,6 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         apiFetch<{ items: any[] }>('/locations/?limit=200').catch(() => ({ items: [] })),
       ]).then(([orgsResp, locsResp]) => {
         const orgs = orgsResp.items ?? [];
+        setOrganizations(orgs.map((o: any) => ({ id: o.id, name: o.name, legal_entity_id: o.legal_entity_id })));
         const locs = locsResp.items ?? [];
         const tree: TreeNodeData[] = [];
         // Add tenant root
@@ -67,7 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{ tenantName, setTenantName, locTree, setLocTree, assetCategories, setAssetCategories, isTerminalOpen, setIsTerminalOpen }}>
+    <AppContext.Provider value={{ tenantName, setTenantName, currentUser, organizations, locTree, setLocTree, assetCategories, setAssetCategories, isTerminalOpen, setIsTerminalOpen }}>
       {children}
     </AppContext.Provider>
   );

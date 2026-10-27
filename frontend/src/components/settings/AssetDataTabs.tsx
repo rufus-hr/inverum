@@ -3,7 +3,7 @@ import {
   Trash2, ChevronRight, Check, X, Edit2, AlertTriangle, Plus,
 } from 'lucide-react';
 import {
-  SettingsContext, SectionHeader, Input, apiFetch,
+  SettingsContext, TenantConfigData, NamingSchema, SectionHeader, Input, apiFetch,
 } from './SettingsShared';
 
 // ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ export function AssetTypesTab() {
 // ---------------------------------------------------------------------------
 
 export function NamingTab() {
-  const { assetCategories, namingSchemas: schemas, setNamingSchemas: setSchemas } = useContext(SettingsContext);
+  const { assetCategories, namingSchemas: schemas, setNamingSchemas: setSchemas, setTenantConfig } = useContext(SettingsContext);
 
   const allTypes = assetCategories.flatMap(c => c.types);
   const typesWithSchema = new Set(schemas.map(s => s.typeId));
@@ -159,12 +159,20 @@ export function NamingTab() {
   const emptyNew = (typeId: string) => ({ typeId, prefix: '', start: 1, end: null as number | null, padding: 4, org: 'All' });
   const [newSchema, setNewSchema] = useState(emptyNew(''));
 
+  const persistSchemas = (next: NamingSchema[]) => {
+    setSchemas(next);
+    apiFetch<TenantConfigData>('/tenants/config/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ naming_schemas: next }),
+    }).then(setTenantConfig).catch(() => {});
+  };
+
   const addSchema = () => {
     if (!newSchema.typeId || !newSchema.prefix.trim()) return;
-    setSchemas(s => [...s, { ...newSchema, id: Date.now().toString(), used: 0, capacity: newSchema.end }]);
+    persistSchemas([...schemas, { ...newSchema, id: Date.now().toString(), used: 0, capacity: newSchema.end }]);
     setAddingForType(null);
   };
-  const removeSchema = (id: string) => setSchemas(s => s.filter(x => x.id !== id));
+  const removeSchema = (id: string) => persistSchemas(schemas.filter(x => x.id !== id));
 
   return (
     <div className="max-w-3xl">

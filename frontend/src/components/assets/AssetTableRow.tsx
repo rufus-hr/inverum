@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
+import { useNavigate } from 'react-router';
 import type { Asset } from '../../types';
-import { Laptop, Monitor, Smartphone, Server, Box as BoxIcon, Car, GripVertical } from 'lucide-react';
+import { Laptop, Monitor, Smartphone, Server, Box as BoxIcon, Car, GripVertical, ClipboardCheck } from 'lucide-react';
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-emerald-500',
@@ -44,6 +45,7 @@ export function AssetTableRow({
   onToggleSelect, onExpand, onAction, onDragStart, onDragEnd,
   onMouseEnter, onMouseLeave, assetCategories,
 }: AssetTableRowProps) {
+  const navigate = useNavigate();
   const pyClass = viewMode === 'touch' ? 'py-5' : viewMode === 'compact' ? 'py-1.5' : 'py-3';
   const checkboxSize = viewMode === 'touch' ? 'w-6 h-6' : 'w-4 h-4';
   const iconSize = viewMode === 'touch' ? 20 : 16;
@@ -153,10 +155,20 @@ export function AssetTableRow({
           <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
           {asset.status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}
         </span>
-        {asset.pending_sop && (
-          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold rounded border border-red-100">
-            {asset.pending_sop}
-          </span>
+        {(asset.is_checklist_pending || asset.pending_sop) && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate('/checklists');
+            }}
+            title="SOP Checklist pending — click to open Checklists"
+            className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full border border-amber-300 transition-colors cursor-pointer"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <ClipboardCheck size={10} />
+            {asset.pending_sop || 'In Process · SOP'}
+          </button>
         )}
       </td>
 

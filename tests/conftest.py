@@ -53,6 +53,10 @@ def _matches_expr(item: Any, expr: Any) -> bool:
         return True
 
     expected = getattr(right, "value", right)
+    if "in_op" in op_name:
+        if isinstance(expected, (list, tuple, set)):
+            return actual in expected
+        return True
     if op_name in ("eq", "is_", "is"):
         return actual == expected
     if op_name in ("ne", "is_not", "isnot"):
@@ -144,6 +148,12 @@ class FakeTestingSession:
 
     def refresh(self, obj: Any) -> None:
         pass
+
+    def get(self, model: type, ident: Any) -> Any | None:
+        for obj in self.store.get(model, []):
+            if getattr(obj, "id", None) == ident:
+                return obj
+        return None
 
     def query(self, model: Any) -> InMemoryQuery:
         if hasattr(model, "clauses") or str(model).startswith("count("):
