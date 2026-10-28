@@ -97,6 +97,12 @@ class InMemoryQuery:
     def limit(self, n: int) -> "InMemoryQuery":
         return InMemoryQuery(self.items[:n])
 
+    def join(self, *args: Any, **kwargs: Any) -> "InMemoryQuery":
+        return self
+
+    def exists(self) -> bool:
+        return len(self.items) > 0
+
     def first(self) -> Any | None:
         return self.items[0] if self.items else None
 
@@ -107,6 +113,8 @@ class InMemoryQuery:
         return len(self.items)
 
     def scalar(self) -> Any:
+        if len(self.items) == 1 and isinstance(self.items[0], bool):
+            return self.items[0]
         return len(self.items)
 
 
@@ -156,6 +164,8 @@ class FakeTestingSession:
         return None
 
     def query(self, model: Any) -> InMemoryQuery:
+        if isinstance(model, bool):
+            return InMemoryQuery([model])
         if hasattr(model, "clauses") or str(model).startswith("count("):
             if self.active_employee_count_override is not None:
                 return InMemoryQuery([None] * self.active_employee_count_override)
