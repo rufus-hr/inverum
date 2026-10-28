@@ -1,13 +1,14 @@
 import React, { useState, useRef, useContext, useEffect } from 'react';
 import {
   ChevronRight, ShieldCheck, Clock, Upload, RefreshCw,
-  Award, Trash2, Bot, FileText, Tag, Plus, Check, X,
+  Award, Trash2, Bot, FileText, Tag, Plus, Check, X, Eye, Download, Save,
 } from 'lucide-react';
 import {
   SettingsContext, TenantConfigData, apiFetch,
   SectionHeader, SettingRow, Input, Select, Badge, SaveBar, Toggle,
 } from './SettingsShared';
 import { useApiQuery } from '../../hooks/useApi';
+import { getAccessToken } from '../../lib/api';
 import type { PagedResponse } from '../../types/api';
 
 interface AuditLogEntry {
@@ -211,14 +212,216 @@ export function AuditTab() {
   );
 }
 
+interface DocumentTemplateItem {
+  id: string;
+  tenant_id: string;
+  name: string;
+  template_type: string;
+  engine: 'svg' | 'typst' | 'html';
+  content: string;
+  requires_signature: boolean;
+  is_system: boolean;
+  is_active: boolean;
+}
+
 export function PrintingTab() {
+  const { data, isLoading, refetch } = useApiQuery<PagedResponse<DocumentTemplateItem>>('/document-templates?limit=50');
+  const templates = data?.items ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editedContent, setEditedContent] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    mime: string;
+    url?: string;
+    svgText?: string;
+    sha256?: string | null;
+  } | null>(null);
+
+  const activeTpl = templates.find(t => t.id === selectedId) ?? templates[0] ?? null;
+
+  useEffect(() => {
+    if (activeTpl) {
+      setSelectedId(activeTpl.id);
+      setEditedContent(activeTpl.content);
+    }
+  }, [activeTpl?.id]);
+
+  const handlePreviewTemplate = async (tpl: DocumentTemplateItem) => {
+    setIsPreviewing(true);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`/api/v1/document-templates/${tpl.id}/preview`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const mime = res.headers.get('content-type') || 'application/pdf';
+      const sha256 = res.headers.get('X-Document-SHA256');
+      if (mime.includes('svg')) {
+        const svgText = await res.text();
+        setPreviewData({ mime: 'image/svg+xml', svgText, sha256 });
+      } else {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setPreviewData({ mime: 'application/pdf', url, sha256 });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!activeTpl) return;
+    setIsSaving(true);
+    try {
+      await apiFetch(`/document-templates/${activeTpl.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ content: editedContent }),
+      });
+      refetch();
+      handlePreviewTemplate({ ...activeTpl, content: editedContent });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return <div className="p-8 text-theme-sm text-theme-text-muted">Loading document &amp; label templates...</div>;
+  }
+
   return (
-    <div className="max-w-lg flex flex-col items-center justify-center py-20 mx-auto text-center">
-      <div className="w-12 h-12 bg-theme-bg border border-theme-border rounded-full flex items-center justify-center mb-4">
-        <Tag size={20} className="text-theme-text-muted" />
+    <div className="flex min-h-full">
+      {/* Left list of templates */}
+      <div className="w-64 shrink-0 border-r border-theme-border flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-theme-border">
+          <p className="text-theme-xs font-semibold text-theme-text-subtle uppercase tracking-wider">
+            Stickers &amp; Templates ({templates.length})
+          </p>
+          <button onClick={() => refetch()} className="p-1 text-theme-text-subtle hover:text-theme-text">
+            <RefreshCw size={12} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto py-1">
+          {templates.map(t => (
+            <button
+              key={t.id}
+              onClick={() => {
+                setSelectedId(t.id);
+                setEditedContent(t.content);
+                setPreviewData(null);
+              }}
+              className={`w-full text-left px-4 py-2.5 border-b border-theme-border/40 transition-colors ${
+                activeTpl?.id === t.id
+                  ? 'bg-theme-surface-hover text-theme-text'
+                  : 'text-theme-text-muted hover:bg-theme-surface-hover'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-theme-xs font-medium truncate">{t.name.split(' — ')[0]}</span>
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-theme-bg border border-theme-border">
+                  {t.engine}
+                </span>
+              </div>
+              <p className="text-[11px] text-theme-text-subtle truncate mt-0.5">
+                {t.name.split(' — ')[1] || t.template_type}
+              </p>
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="text-theme-text font-medium mb-1">Barcode &amp; Printing</p>
-      <p className="text-theme-sm text-theme-text-muted">Label templates, printer configuration, barcode formats (QR, Code128, DataMatrix). Coming in Phase 3.</p>
+
+      {/* Right editor & live preview */}
+      {activeTpl && (
+        <div className="flex-1 px-8 py-6 overflow-auto space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-theme-lg font-semibold text-theme-text">{activeTpl.name}</h2>
+                <Badge color={activeTpl.engine === 'svg' ? 'blue' : 'green'}>
+                  {activeTpl.engine.toUpperCase()}
+                </Badge>
+                {activeTpl.requires_signature && (
+                  <Badge color="amber">eIDAS PAdES-B-LTA</Badge>
+                )}
+              </div>
+              <p className="text-theme-xs text-theme-text-muted mt-1">
+                Zero-UI deterministički predložak s Jinja2 varijablama (<code>{'{{ asset_name }}'}</code>, <code>{'{{ inventory_number }}'}</code>, <code>{'{{ qrcode_svg }}'}</code>, <code>{'{{ barcode_svg }}'}</code>).
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => handlePreviewTemplate(activeTpl)}
+                disabled={isPreviewing}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium transition-colors disabled:opacity-50"
+              >
+                <Eye size={13} />
+                {isPreviewing ? 'Rendering…' : 'Live Preview'}
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={isSaving || editedContent === activeTpl.content}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs border border-theme-border hover:border-theme-border-strong text-theme-text rounded transition-colors disabled:opacity-40"
+              >
+                <Save size={13} />
+                {isSaving ? 'Saving…' : 'Save Template'}
+              </button>
+            </div>
+          </div>
+
+          {previewData && (
+            <div className="border border-theme-border rounded-xl overflow-hidden bg-theme-bg">
+              <div className="px-4 py-2.5 border-b border-theme-border flex items-center justify-between bg-theme-surface">
+                <div className="flex items-center gap-2 text-theme-xs font-medium text-theme-text">
+                  <Eye size={13} className="text-indigo-500" />
+                  <span>Live Render Preview ({previewData.mime})</span>
+                  {previewData.sha256 && (
+                    <span className="font-mono text-[10px] text-emerald-500 ml-2">
+                      PAdES SHA-256: {previewData.sha256.slice(0, 16)}…
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setPreviewData(null)}
+                  className="text-theme-xs text-theme-text-muted hover:text-theme-text"
+                >
+                  Close Preview ✕
+                </button>
+              </div>
+              <div className="p-6 flex items-center justify-center bg-slate-100">
+                {previewData.svgText ? (
+                  <div
+                    className="bg-white p-4 rounded-lg shadow border border-slate-200"
+                    dangerouslySetInnerHTML={{ __html: previewData.svgText }}
+                  />
+                ) : previewData.url ? (
+                  <iframe
+                    src={previewData.url}
+                    title="Template PDF Preview"
+                    className="w-full h-[520px] rounded border border-slate-300 bg-white"
+                  />
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-theme-xs font-semibold text-theme-text-subtle uppercase tracking-wider mb-2">
+              Template Source ({activeTpl.engine === 'svg' ? 'SVG + Jinja2' : 'Typst + Jinja2'})
+            </label>
+            <textarea
+              value={editedContent}
+              onChange={e => setEditedContent(e.target.value)}
+              rows={14}
+              className="w-full font-mono text-xs bg-theme-bg border border-theme-border rounded-lg p-3.5 text-theme-text focus:outline-none focus:border-theme-primary"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -407,6 +610,16 @@ export function ReportsTab() {
   const [addingTemplate, setAddingTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [reportPreview, setReportPreview] = useState<{
+    reportName: string;
+    format: ReportFormat;
+    pdfUrl?: string;
+    csvRows?: string[][];
+    sha256?: string | null;
+    tsaExpires?: string | null;
+    downloadBlobUrl: string;
+    downloadFileName: string;
+  } | null>(null);
 
   useEffect(() => {
     const saved = tenantConfig?.settings?.report_schedules;
@@ -430,34 +643,66 @@ export function ReportsTab() {
     persistReports(next);
   };
 
-  const runReportNow = async (r: ReportDefinition) => {
+  const executeReport = async (r: ReportDefinition, mode: 'preview' | 'download') => {
     setRunningId(r.id);
-    const token = localStorage.getItem('inverum_access_token') || localStorage.getItem('token');
+    const token = getAccessToken();
     try {
+      const targetFormat = mode === 'preview' && r.format === 'XLSX' ? 'PDF' : r.format;
       const res = await fetch(`/api/v1/documents/compliance-reports/${r.id}/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ format: r.format }),
+        body: JSON.stringify({ format: targetFormat }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
       const sha256 = res.headers.get('X-Document-SHA256');
+      const tsaExpires = res.headers.get('X-Document-TSA-Expires');
       const blob = await res.blob();
-      const ext = r.format.toLowerCase();
+      const ext = targetFormat.toLowerCase();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${r.id}_${new Date().toISOString().slice(0, 10)}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const fileName = `${r.id}_${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+      if (mode === 'download') {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      } else if (targetFormat === 'CSV') {
+        const text = await blob.text();
+        const rows = text
+          .trim()
+          .split('\n')
+          .filter(line => line.trim().length > 0)
+          .map(line => line.split(';'));
+        setReportPreview({
+          reportName: r.name,
+          format: 'CSV',
+          csvRows: rows,
+          sha256,
+          tsaExpires,
+          downloadBlobUrl: url,
+          downloadFileName: fileName,
+        });
+      } else {
+        setReportPreview({
+          reportName: r.name,
+          format: 'PDF',
+          pdfUrl: url,
+          sha256,
+          tsaExpires,
+          downloadBlobUrl: url,
+          downloadFileName: fileName,
+        });
+      }
+
       const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
       update(r.id, { lastRun: nowStr, lastHash: sha256 });
     } catch {
-      // Offline fallback timestamp
       update(r.id, { lastRun: new Date().toISOString().slice(0, 16).replace('T', ' ') });
     } finally {
       setRunningId(null);
@@ -562,16 +807,93 @@ export function ReportsTab() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => runReportNow(cur)}
+              onClick={() => executeReport(cur, 'preview')}
+              disabled={runningId === cur.id}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium transition-colors disabled:opacity-50"
+            >
+              <Eye size={12} />
+              {runningId === cur.id ? 'Generating…' : 'Preview Report'}
+            </button>
+            <button
+              onClick={() => executeReport(cur, 'download')}
               disabled={runningId === cur.id}
               className="flex items-center gap-1.5 px-3 py-1.5 text-theme-xs border border-theme-border hover:border-theme-border-strong text-theme-text-muted hover:text-theme-text rounded transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={11} className={runningId === cur.id ? 'animate-spin' : ''} />
-              {runningId === cur.id ? 'Generating…' : 'Run now'}
+              <Download size={12} />
+              Download ({cur.format})
             </button>
             <Toggle value={cur.enabled} onChange={v => update(cur.id, { enabled: v })} />
           </div>
         </div>
+
+        {reportPreview && (
+          <div className="mt-5 border border-theme-border rounded-xl overflow-hidden bg-theme-bg shadow-lg">
+            <div className="px-4 py-3 border-b border-theme-border bg-theme-surface flex items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Eye size={14} className="text-indigo-500" />
+                  <span className="text-theme-sm font-semibold text-theme-text">
+                    {reportPreview.reportName}
+                  </span>
+                  <FormatBadge format={reportPreview.format} />
+                </div>
+                {reportPreview.sha256 && (
+                  <p className="text-[11px] font-mono text-emerald-500 mt-0.5">
+                    eIDAS PAdES-B-LTA SHA-256: {reportPreview.sha256}
+                    {reportPreview.tsaExpires ? ` · TSA Valid Until: ${reportPreview.tsaExpires.slice(0, 10)}` : ''}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={reportPreview.downloadBlobUrl}
+                  download={reportPreview.downloadFileName}
+                  className="flex items-center gap-1 px-2.5 py-1 text-theme-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium"
+                >
+                  <Download size={12} /> Download
+                </a>
+                <button
+                  onClick={() => setReportPreview(null)}
+                  className="px-2.5 py-1 text-theme-xs text-theme-text-muted hover:text-theme-text border border-theme-border rounded"
+                >
+                  Close ✕
+                </button>
+              </div>
+            </div>
+            <div className="p-4 bg-slate-100">
+              {reportPreview.pdfUrl ? (
+                <iframe
+                  src={reportPreview.pdfUrl}
+                  title="Compliance Report PDF Preview"
+                  className="w-full h-[560px] rounded border border-slate-300 bg-white"
+                />
+              ) : reportPreview.csvRows ? (
+                <div className="max-h-[480px] overflow-auto bg-white rounded border border-slate-300 p-3">
+                  <table className="w-full text-xs border-collapse">
+                    <tbody>
+                      {reportPreview.csvRows.map((row, rIdx) => (
+                        <tr
+                          key={rIdx}
+                          className={
+                            row[0]?.startsWith('#')
+                              ? 'bg-slate-50 text-slate-600 font-mono'
+                              : 'border-b border-slate-200 hover:bg-slate-50'
+                          }
+                        >
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} className="px-2.5 py-1.5 text-slate-800">
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         <div className="mt-6 space-y-6">
           <div>
