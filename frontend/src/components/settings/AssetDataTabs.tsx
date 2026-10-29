@@ -3,15 +3,22 @@ import {
   Trash2, ChevronRight, Check, X, Edit2, AlertTriangle, Plus,
 } from 'lucide-react';
 import {
-  SettingsContext, TenantConfigData, NamingSchema, SectionHeader, Input, apiFetch,
+  SettingsContext, TenantConfigData, AssetCategory, NamingSchema, ReferenceGroup, ReferenceItem,
+  SectionHeader, Input, Select, apiFetch,
 } from './SettingsShared';
 
 // ---------------------------------------------------------------------------
-// Asset Types Tab — full CRUD & wired to /asset-categories/
+// Asset Types Tab — full CRUD & wired to /asset-categories/ + tenantConfig
 // ---------------------------------------------------------------------------
 
 export function AssetTypesTab() {
-  const { assetCategories: categories, setAssetCategories: setCategories, namingSchemas } = useContext(SettingsContext);
+  const {
+    assetCategories: categories,
+    setAssetCategories: setCategories,
+    namingSchemas,
+    setNamingSchemas,
+    saveTenantSettings,
+  } = useContext(SettingsContext);
   const typesWithSchema = new Set(namingSchemas.map(s => s.typeId));
   const [expandedCat, setExpandedCat] = useState<string | null>('c1');
   const [addingField, setAddingField] = useState<string | null>(null);
@@ -23,36 +30,69 @@ export function AssetTypesTab() {
   const [editingType, setEditingType] = useState<string | null>(null);
   const [editTypeName, setEditTypeName] = useState('');
 
+  const persistCategories = (next: AssetCategory[], nextSchemas?: NamingSchema[]) => {
+    setCategories(next);
+    if (nextSchemas) {
+      setNamingSchemas(nextSchemas);
+      void saveTenantSettings({ asset_categories: next, naming_schemas: nextSchemas });
+    } else {
+      void saveTenantSettings({ asset_categories: next });
+    }
+  };
+
   const addField = (typeId: string) => {
     if (!newFieldName.trim()) return;
-    setCategories(cats => cats.map(c => ({ ...c, types: c.types.map(t => t.id === typeId ? { ...t, fields: [...t.fields, { id: Date.now().toString(), name: newFieldName.trim() }] } : t) })));
+    const next = categories.map(c => ({
+      ...c,
+      types: c.types.map(t => t.id === typeId ? { ...t, fields: [...t.fields, { id: Date.now().toString(), name: newFieldName.trim() }] } : t),
+    }));
+    persistCategories(next);
     setNewFieldName(''); setAddingField(null);
   };
-  const removeField = (typeId: string, fieldId: string) =>
-    setCategories(cats => cats.map(c => ({ ...c, types: c.types.map(t => t.id === typeId ? { ...t, fields: t.fields.filter(f => f.id !== fieldId) } : t) })));
+  const removeField = (typeId: string, fieldId: string) => {
+    const next = categories.map(c => ({
+      ...c,
+      types: c.types.map(t => t.id === typeId ? { ...t, fields: t.fields.filter(f => f.id !== fieldId) } : t),
+    }));
+    persistCategories(next);
+  };
   const addType = (catId: string) => {
     if (!newTypeName.trim()) return;
     const trimmed = newTypeName.trim();
-    setCategories(cats => cats.map(c => c.id === catId ? { ...c, types: [...c.types, { id: Date.now().toString(), name: trimmed, fields: [] }] } : c));
+    const next = categories.map(c => c.id === catId ? { ...c, types: [...c.types, { id: Date.now().toString(), name: trimmed, fields: [] }] } : c);
+    persistCategories(next);
     void apiFetch('/asset-categories/', {
       method: 'POST',
       body: JSON.stringify({ name: trimmed, code: trimmed.toUpperCase().slice(0, 10) }),
     }).catch(() => {});
     setNewTypeName(''); setAddingType(null);
   };
-  const removeType = (catId: string, typeId: string) =>
-    setCategories(cats => cats.map(c => c.id === catId ? { ...c, types: c.types.filter(t => t.id !== typeId) } : c));
+  const removeType = (catId: string, typeId: string) => {
+    const next = categories.map(c => c.id === catId ? { ...c, types: c.types.filter(t => t.id !== typeId) } : c);
+    const cleanedSchemas = namingSchemas.filter(s => s.typeId !== typeId);
+    persistCategories(next, cleanedSchemas);
+  };
   const saveTypeName = (typeId: string) => {
     if (!editTypeName.trim()) return;
-    setCategories(cats => cats.map(c => ({ ...c, types: c.types.map(t => t.id === typeId ? { ...t, name: editTypeName.trim() } : t) })));
+    const next = categories.map(c => ({
+      ...c,
+      types: c.types.map(t => t.id === typeId ? { ...t, name: editTypeName.trim() } : t),
+    }));
+    persistCategories(next);
     setEditingType(null);
   };
   const addCategory = () => {
     if (!newCatName.trim()) return;
-    setCategories(cats => [...cats, { id: Date.now().toString(), name: newCatName.trim(), types: [] }]);
+    const next = [...categories, { id: Date.now().toString(), name: newCatName.trim(), types: [] }];
+    persistCategories(next);
     setNewCatName(''); setAddingCat(false);
   };
-  const removeCategory = (catId: string) => setCategories(cats => cats.filter(c => c.id !== catId));
+  const removeCategory = (catId: string) => {
+    const removedTypeIds = new Set(categories.find(c => c.id === catId)?.types.map(t => t.id) ?? []);
+    const next = categories.filter(c => c.id !== catId);
+    const cleanedSchemas = namingSchemas.filter(s => !removedTypeIds.has(s.typeId));
+    persistCategories(next, cleanedSchemas);
+  };
 
   return (
     <div className="max-w-3xl">
@@ -149,14 +189,15 @@ export function AssetTypesTab() {
 // ---------------------------------------------------------------------------
 
 export function NamingTab() {
-  const { assetCategories, namingSchemas: schemas, setNamingSchemas: setSchemas, setTenantConfig } = useContext(SettingsContext);
+  const { isOrg, selectedOrg, orgs, assetCategories, namingSchemas: schemas, setNamingSchemas: setSchemas, setTenantConfig } = useContext(SettingsContext);
 
+  const orgOptions = Array.from(new Set(['All', ...orgs.filter(o => !o.isTenant).map(o => o.name)]));
   const allTypes = assetCategories.flatMap(c => c.types);
   const typesWithSchema = new Set(schemas.map(s => s.typeId));
   const missingCount = allTypes.filter(t => !typesWithSchema.has(t.id)).length;
 
   const [addingForType, setAddingForType] = useState<string | null>(null);
-  const emptyNew = (typeId: string) => ({ typeId, prefix: '', start: 1, end: null as number | null, padding: 4, org: 'All' });
+  const emptyNew = (typeId: string) => ({ typeId, prefix: '', start: 1, end: null as number | null, padding: 4, org: isOrg ? selectedOrg.name : 'All' });
   const [newSchema, setNewSchema] = useState(emptyNew(''));
 
   const persistSchemas = (next: NamingSchema[]) => {
@@ -242,7 +283,7 @@ export function NamingTab() {
                               </div>
                             </td>
                             <td className="px-4 py-2"><span className="text-theme-xs text-theme-text-subtle">—</span></td>
-                            <td className="px-4 py-2"><Input value={newSchema.org} onChange={(v) => setNewSchema(s => ({ ...s, org: v }))} placeholder="All" className="w-20" /></td>
+                            <td className="px-4 py-2"><Select value={newSchema.org} onChange={(v) => setNewSchema(s => ({ ...s, org: v }))} options={orgOptions} className="w-32" /></td>
                             <td className="px-4 py-2">
                               <div className="flex gap-1">
                                 <button onClick={addSchema} className="p-1 text-emerald-600 hover:text-emerald-700"><Check size={13} /></button>
@@ -280,99 +321,145 @@ export function NamingTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Reference Data Tab — full CRUD with inline edit
+// Reference Data Tab — full CRUD with inline edit, synced via SettingsContext
 // ---------------------------------------------------------------------------
 
-interface RefItem { id: string; value: string; color: string; description: string; }
-interface RefGroup { key: string; label: string; items: RefItem[]; }
-
 export function ReferenceDataTab() {
-  const [groups, setGroups] = useState<RefGroup[]>([
-    { key: 'classification', label: 'Classification Levels', items: [{ id: '1', value: 'PUBLIC', color: '#22c55e', description: 'Visible to all' }, { id: '2', value: 'INTERNAL', color: '#3b82f6', description: 'Internal use only' }, { id: '3', value: 'CONFIDENTIAL', color: '#f59e0b', description: 'Restricted access' }, { id: '4', value: 'SECRET', color: '#ef4444', description: 'Need-to-know basis' }] },
-    { key: 'employee_tags', label: 'Employee Tags', items: [{ id: '5', value: 'VIP', color: '#a855f7', description: 'Priority service' }, { id: '6', value: 'ADMIN', color: '#3b82f6', description: 'System administrator' }, { id: '7', value: 'CONTRACTOR', color: '#f59e0b', description: 'External contractor' }] },
-    { key: 'asset_conditions', label: 'Asset Conditions', items: [{ id: '8', value: 'New', color: '#22c55e', description: 'Unused, in original packaging' }, { id: '9', value: 'Good', color: '#3b82f6', description: 'Fully functional, minor wear' }, { id: '10', value: 'Fair', color: '#f59e0b', description: 'Functional, visible wear' }, { id: '11', value: 'Damaged', color: '#ef4444', description: 'Needs repair' }] },
-    { key: 'wo_types', label: 'Work Order Types', items: [{ id: '12', value: 'Repair', color: '#ef4444', description: 'Fix broken or malfunctioning assets' }, { id: '13', value: 'Installation', color: '#3b82f6', description: 'Set up new hardware or software' }, { id: '14', value: 'Decommission', color: '#64748b', description: 'Retire and dispose of assets' }, { id: '15', value: 'Transfer', color: '#a855f7', description: 'Move asset between locations or users' }, { id: '16', value: 'Inspection', color: '#f59e0b', description: 'Routine check or compliance audit' }, { id: '17', value: 'Software Update', color: '#06b6d4', description: 'OS, firmware, or application update' }, { id: '18', value: 'Preventive Maintenance', color: '#22c55e', description: 'Scheduled maintenance to prevent failure' }] },
-  ]);
+  const { referenceGroups: groups, setReferenceGroups: setGroups, saveTenantSettings } = useContext(SettingsContext);
   const [expanded, setExpanded] = useState<string | null>('classification');
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editVal, setEditVal] = useState('');
-  const [editDesc, setEditDesc] = useState('');
+  const [editCode, setEditCode] = useState('');
   const [editColor, setEditColor] = useState('');
   const [addingInGroup, setAddingInGroup] = useState<string | null>(null);
   const [newVal, setNewVal] = useState('');
-  const [newDesc, setNewDesc] = useState('');
+  const [newCode, setNewCode] = useState('');
   const [newColor, setNewColor] = useState('#6b7280');
   const [addingGroup, setAddingGroup] = useState(false);
   const [newGroupLabel, setNewGroupLabel] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
 
-  const startEdit = (item: RefItem) => { setEditingItem(item.id); setEditVal(item.value); setEditDesc(item.description); setEditColor(item.color); };
-  const saveEdit = (groupKey: string) => {
-    setGroups(gs => gs.map(g => g.key === groupKey ? { ...g, items: g.items.map(i => i.id === editingItem ? { ...i, value: editVal, description: editDesc, color: editColor } : i) } : g));
+  const persistGroups = (next: ReferenceGroup[]) => {
+    setGroups(next);
+    void saveTenantSettings({ reference_groups: next });
+  };
+
+  const startEdit = (item: ReferenceItem) => {
+    setEditingItem(item.id);
+    setEditVal(item.label);
+    setEditCode(item.code || '');
+    setEditColor(item.color || '#6b7280');
+  };
+  const saveEdit = (groupId: string) => {
+    const next = groups.map(g => g.id === groupId ? {
+      ...g,
+      items: g.items.map(i => i.id === editingItem ? {
+        ...i,
+        label: editVal.trim() || i.label,
+        code: editCode.trim() ? editCode.trim().toUpperCase() : i.code,
+        color: editColor,
+      } : i),
+    } : g);
+    persistGroups(next);
     setEditingItem(null);
   };
-  const removeItem = (groupKey: string, itemId: string) =>
-    setGroups(gs => gs.map(g => g.key === groupKey ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g));
-  const addItem = (groupKey: string) => {
-    if (!newVal.trim()) return;
-    setGroups(gs => gs.map(g => g.key === groupKey ? { ...g, items: [...g.items, { id: Date.now().toString(), value: newVal.trim(), description: newDesc.trim(), color: newColor }] } : g));
-    setNewVal(''); setNewDesc(''); setNewColor('#6b7280'); setAddingInGroup(null);
+  const removeItem = (groupId: string, itemId: string) => {
+    const next = groups.map(g => g.id === groupId ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g);
+    persistGroups(next);
   };
-  const removeGroup = (groupKey: string) => setGroups(gs => gs.filter(g => g.key !== groupKey));
+  const addItem = (groupId: string) => {
+    if (!newVal.trim()) return;
+    const next = groups.map(g => g.id === groupId ? {
+      ...g,
+      items: [
+        ...g.items,
+        {
+          id: Date.now().toString(),
+          label: newVal.trim(),
+          code: newCode.trim() ? newCode.trim().toUpperCase() : newVal.trim().toUpperCase().replace(/\s+/g, '_'),
+          color: newColor,
+        },
+      ],
+    } : g);
+    persistGroups(next);
+    setNewVal(''); setNewCode(''); setNewColor('#6b7280'); setAddingInGroup(null);
+  };
+  const removeGroup = (groupId: string) => {
+    persistGroups(groups.filter(g => g.id !== groupId));
+  };
   const addGroup = () => {
     if (!newGroupLabel.trim()) return;
-    setGroups(gs => [...gs, { key: Date.now().toString(), label: newGroupLabel.trim(), items: [] }]);
-    setNewGroupLabel(''); setAddingGroup(false);
+    persistGroups([
+      ...groups,
+      {
+        id: Date.now().toString(),
+        name: newGroupLabel.trim(),
+        description: newGroupDesc.trim() || 'Custom reference data group',
+        hasColor: true,
+        items: [],
+      },
+    ]);
+    setNewGroupLabel(''); setNewGroupDesc(''); setAddingGroup(false);
   };
 
   return (
     <div className="max-w-2xl">
-      <SectionHeader title="Reference Data" description="Tenant-managed lookup lists used across the application" />
+      <SectionHeader title="Reference Data" description="Tenant-managed lookup lists shared with Security (Classification Levels), Integrations (Scope Filters), and Work Orders" />
       <div className="space-y-2">
         {groups.map((g) => (
-          <div key={g.key} className="border border-theme-border rounded-lg overflow-hidden">
+          <div key={g.id} className="border border-theme-border rounded-lg overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 hover:bg-theme-surface-hover transition-colors">
-              <button className="flex items-center gap-2 flex-1 text-left" onClick={() => setExpanded(expanded === g.key ? null : g.key)}>
-                <span className="text-theme-sm font-medium text-theme-text">{g.label}</span>
-                <span className="text-theme-xs text-theme-text-subtle">{g.items.length} items</span>
+              <button className="flex items-center gap-2 flex-1 text-left" onClick={() => setExpanded(expanded === g.id ? null : g.id)}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-theme-sm font-medium text-theme-text">{g.name}</span>
+                    <span className="text-theme-xs text-theme-text-subtle">{g.items.length} items</span>
+                  </div>
+                  {g.description && <p className="text-theme-xs text-theme-text-subtle mt-0.5">{g.description}</p>}
+                </div>
               </button>
               <div className="flex items-center gap-1">
-                <button onClick={() => removeGroup(g.key)} className="p-1.5 text-theme-text-subtle hover:text-theme-danger transition-colors"><Trash2 size={12} /></button>
-                <ChevronRight size={14} className={`text-theme-text-subtle transition-transform ${expanded === g.key ? 'rotate-90' : ''}`} />
+                {!['classification', 'employee_tags', 'asset_conditions', 'wo_types'].includes(g.id) && (
+                  <button onClick={() => removeGroup(g.id)} className="p-1.5 text-theme-text-subtle hover:text-theme-danger transition-colors"><Trash2 size={12} /></button>
+                )}
+                <ChevronRight size={14} className={`text-theme-text-subtle transition-transform ${expanded === g.id ? 'rotate-90' : ''}`} />
               </div>
             </div>
-            {expanded === g.key && (
+            {expanded === g.id && (
               <div className="border-t border-theme-border px-4 py-3 space-y-2">
                 {g.items.map((item) => (
                   <div key={item.id}>
                     {editingItem === item.id ? (
                       <div className="flex items-center gap-2">
                         <input type="color" value={editColor} onChange={(e) => setEditColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer border-0 p-0 shrink-0" />
-                        <Input value={editVal} onChange={setEditVal} className="w-28" onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(g.key); if (e.key === 'Escape') setEditingItem(null); }} />
-                        <Input value={editDesc} onChange={setEditDesc} className="flex-1" placeholder="Description" onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(g.key); if (e.key === 'Escape') setEditingItem(null); }} />
-                        <button onClick={() => saveEdit(g.key)} className="p-1 text-emerald-600 hover:text-emerald-700 shrink-0"><Check size={13} /></button>
+                        <Input value={editVal} onChange={setEditVal} className="w-36" placeholder="Label" onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(g.id); if (e.key === 'Escape') setEditingItem(null); }} />
+                        <Input value={editCode} onChange={setEditCode} className="flex-1 font-mono text-theme-xs" placeholder="CODE (optional)" onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(g.id); if (e.key === 'Escape') setEditingItem(null); }} />
+                        <button onClick={() => saveEdit(g.id)} className="p-1 text-emerald-600 hover:text-emerald-700 shrink-0"><Check size={13} /></button>
                         <button onClick={() => setEditingItem(null)} className="p-1 text-theme-text-subtle hover:text-theme-text shrink-0"><X size={13} /></button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-3 group/item">
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                        <span className="text-theme-sm font-medium text-theme-text w-28">{item.value}</span>
-                        <span className="text-theme-xs text-theme-text-muted flex-1">{item.description}</span>
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color || '#64748b' }} />
+                        <span className="text-theme-sm font-medium text-theme-text w-44">{item.label}</span>
+                        <span className="text-theme-xs font-mono text-theme-text-muted flex-1">{item.code || ''}</span>
                         <button onClick={() => startEdit(item)} className="p-1 text-theme-text-subtle hover:text-theme-text transition-colors opacity-0 group-hover/item:opacity-100"><Edit2 size={12} /></button>
-                        <button onClick={() => removeItem(g.key, item.id)} className="p-1 text-theme-text-subtle hover:text-theme-danger transition-colors opacity-0 group-hover/item:opacity-100"><Trash2 size={12} /></button>
+                        {!item.system && (
+                          <button onClick={() => removeItem(g.id, item.id)} className="p-1 text-theme-text-subtle hover:text-theme-danger transition-colors opacity-0 group-hover/item:opacity-100"><Trash2 size={12} /></button>
+                        )}
                       </div>
                     )}
                   </div>
                 ))}
-                {addingInGroup === g.key ? (
+                {addingInGroup === g.id ? (
                   <div className="flex items-center gap-2 mt-1">
                     <input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer border-0 p-0 shrink-0" />
-                    <Input value={newVal} onChange={setNewVal} placeholder="Value" className="w-28" onKeyDown={(e) => { if (e.key === 'Enter') addItem(g.key); if (e.key === 'Escape') { setAddingInGroup(null); setNewVal(''); setNewDesc(''); } }} />
-                    <Input value={newDesc} onChange={setNewDesc} placeholder="Description" className="flex-1" onKeyDown={(e) => { if (e.key === 'Enter') addItem(g.key); if (e.key === 'Escape') { setAddingInGroup(null); setNewVal(''); setNewDesc(''); } }} />
-                    <button onClick={() => addItem(g.key)} className="p-1 text-emerald-600 hover:text-emerald-700 shrink-0"><Check size={13} /></button>
-                    <button onClick={() => { setAddingInGroup(null); setNewVal(''); setNewDesc(''); }} className="p-1 text-theme-text-subtle hover:text-theme-text shrink-0"><X size={13} /></button>
+                    <Input value={newVal} onChange={setNewVal} placeholder="Label" className="w-36" onKeyDown={(e) => { if (e.key === 'Enter') addItem(g.id); if (e.key === 'Escape') { setAddingInGroup(null); setNewVal(''); setNewCode(''); } }} />
+                    <Input value={newCode} onChange={setNewCode} placeholder="CODE (optional)" className="flex-1 font-mono text-theme-xs" onKeyDown={(e) => { if (e.key === 'Enter') addItem(g.id); if (e.key === 'Escape') { setAddingInGroup(null); setNewVal(''); setNewCode(''); } }} />
+                    <button onClick={() => addItem(g.id)} className="p-1 text-emerald-600 hover:text-emerald-700 shrink-0"><Check size={13} /></button>
+                    <button onClick={() => { setAddingInGroup(null); setNewVal(''); setNewCode(''); }} className="p-1 text-theme-text-subtle hover:text-theme-text shrink-0"><X size={13} /></button>
                   </div>
                 ) : (
-                  <button onClick={() => { setAddingInGroup(g.key); setNewVal(''); setNewDesc(''); setNewColor('#6b7280'); }} className="flex items-center gap-1.5 text-theme-xs text-theme-primary hover:text-theme-primary-hover mt-1 transition-colors"><Plus size={12} /> Add item</button>
+                  <button onClick={() => { setAddingInGroup(g.id); setNewVal(''); setNewCode(''); setNewColor('#6b7280'); }} className="flex items-center gap-1.5 text-theme-xs text-theme-primary hover:text-theme-primary-hover mt-1 transition-colors"><Plus size={12} /> Add item</button>
                 )}
               </div>
             )}
@@ -380,9 +467,10 @@ export function ReferenceDataTab() {
         ))}
         {addingGroup ? (
           <div className="flex items-center gap-2 mt-2">
-            <Input value={newGroupLabel} onChange={setNewGroupLabel} placeholder="Group name" className="w-52" onKeyDown={(e) => { if (e.key === 'Enter') addGroup(); if (e.key === 'Escape') { setAddingGroup(false); setNewGroupLabel(''); } }} />
+            <Input value={newGroupLabel} onChange={setNewGroupLabel} placeholder="Group name" className="w-44" onKeyDown={(e) => { if (e.key === 'Enter') addGroup(); if (e.key === 'Escape') { setAddingGroup(false); setNewGroupLabel(''); } }} />
+            <Input value={newGroupDesc} onChange={setNewGroupDesc} placeholder="Description" className="flex-1" onKeyDown={(e) => { if (e.key === 'Enter') addGroup(); if (e.key === 'Escape') { setAddingGroup(false); setNewGroupLabel(''); } }} />
             <button onClick={addGroup} className="p-1.5 text-emerald-600 hover:text-emerald-700"><Check size={13} /></button>
-            <button onClick={() => { setAddingGroup(false); setNewGroupLabel(''); }} className="p-1.5 text-theme-text-subtle hover:text-theme-text"><X size={13} /></button>
+            <button onClick={() => { setAddingGroup(false); setNewGroupLabel(''); setNewGroupDesc(''); }} className="p-1.5 text-theme-text-subtle hover:text-theme-text"><X size={13} /></button>
           </div>
         ) : (
           <button onClick={() => setAddingGroup(true)} className="flex items-center gap-2 text-theme-sm text-theme-primary hover:text-theme-primary-hover mt-2 transition-colors"><Plus size={14} /> Add group</button>

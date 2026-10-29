@@ -219,6 +219,26 @@ function AppHeader() {
 // --- Main Layout ---
 export default function AppLayout() {
   const { isTerminalOpen, setIsTerminalOpen } = useAppContext();
+  const [enabledModules, setEnabledModules] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    apiFetch<{ modules?: Record<string, boolean> }>('/tenants/config')
+      .then((cfg) => {
+        if (cfg?.modules) setEnabledModules(cfg.modules);
+      })
+      .catch(() => {});
+
+    const handleModulesUpdated = (e: Event) => {
+      const custom = e as CustomEvent<Record<string, boolean>>;
+      if (custom.detail) {
+        setEnabledModules(prev => ({ ...prev, ...custom.detail }));
+      }
+    };
+    window.addEventListener('inverum-modules-updated', handleModulesUpdated);
+    return () => window.removeEventListener('inverum-modules-updated', handleModulesUpdated);
+  }, []);
+
+  const isModEnabled = (key: string) => enabledModules[key] !== false;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F9FA] text-slate-900 font-sans relative overflow-hidden">
@@ -252,11 +272,11 @@ export default function AppLayout() {
           <nav className="flex flex-col gap-2 w-full h-full overflow-x-hidden">
             <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" to="/dashboard" />
             <NavItem icon={<Server size={20} />} label="Assets" to="/assets" />
-            <NavItem icon={<Box size={20} />} label="Boxes" to="/boxes" />
-            <NavItem icon={<Package size={20} />} label="Supply" to="/supply" />
-            <NavItem icon={<Wrench size={20} />} label="Work Orders" to="/work-orders" />
-            <NavItem icon={<ClipboardCheck size={20} />} label="Checklists" to="/checklists" />
-            <NavItem icon={<Store size={20} />} label="Vendors" to="/vendors" />
+            {isModEnabled('storage') && <NavItem icon={<Box size={20} />} label="Boxes" to="/boxes" />}
+            {isModEnabled('supplies') && <NavItem icon={<Package size={20} />} label="Supply" to="/supply" />}
+            {isModEnabled('maintenance') && <NavItem icon={<Wrench size={20} />} label="Work Orders" to="/work-orders" />}
+            {isModEnabled('checklists') && <NavItem icon={<ClipboardCheck size={20} />} label="Checklists" to="/checklists" />}
+            {isModEnabled('vendors') && <NavItem icon={<Store size={20} />} label="Vendors" to="/vendors" />}
             <NavItem icon={<ShoppingBag size={20} />} label="MSP Nabava" to="/procurement" />
 
             <div className="mt-4 mb-1 relative h-4 flex items-center justify-center w-full">

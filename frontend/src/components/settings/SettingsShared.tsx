@@ -1,4 +1,4 @@
-import React, { useState, useRef, createContext } from 'react';
+import React, { useState, useRef, createContext, useContext } from 'react';
 import {
   RotateCcw, Link2, ChevronRight, Check, Upload, X,
 } from 'lucide-react';
@@ -31,6 +31,23 @@ export interface OrgScopeItem {
   description?: string | null;
 }
 
+export interface ReferenceItem {
+  id: string;
+  label: string;
+  code?: string;
+  color?: string;
+  system?: boolean;
+}
+
+export interface ReferenceGroup {
+  id: string;
+  name: string;
+  description: string;
+  hasCode?: boolean;
+  hasColor?: boolean;
+  items: ReferenceItem[];
+}
+
 export interface TenantConfigData {
   tenant_id: string;
   name: string;
@@ -47,12 +64,55 @@ export interface TenantConfigData {
     security?: Record<string, unknown>;
     sso?: Record<string, unknown>;
     pki?: Record<string, unknown>;
+    asset_categories?: AssetCategory[];
     naming_schemas?: NamingSchema[];
+    reference_groups?: ReferenceGroup[];
+    roles_custom?: Array<{
+      id: string;
+      name: string;
+      description: string;
+      system: boolean;
+      permissions: string[];
+    }>;
+    org_overrides?: Record<string, Record<string, unknown>>;
+    automation_rules?: Array<Record<string, unknown>>;
     report_schedules?: Array<Record<string, unknown>>;
     webhooks?: Array<Record<string, unknown>>;
   };
   modules: Record<string, boolean>;
 }
+
+export const INITIAL_REFERENCE_GROUPS: ReferenceGroup[] = [
+  { id: 'classification', name: 'Classification Levels', description: 'Security classification applied to assets and locations', hasCode: true, hasColor: true, items: [
+    { id: '1', label: 'Public',       code: 'PUBLIC',       color: '#10b981', system: true },
+    { id: '2', label: 'Internal',     code: 'INTERNAL',     color: '#3b82f6', system: true },
+    { id: '3', label: 'Confidential', code: 'CONFIDENTIAL', color: '#f59e0b', system: true },
+    { id: '4', label: 'Restricted',   code: 'RESTRICTED',   color: '#ef4444', system: true },
+  ]},
+  { id: 'employee_tags', name: 'Employee Tags', description: 'Certifications, clearances, and qualifications assignable to employees', items: [
+    { id: '1', label: 'Height Work Certified' },
+    { id: '2', label: 'Electrical Safety' },
+    { id: '3', label: 'Forklift License' },
+    { id: '4', label: 'First Aid' },
+    { id: '5', label: 'Data Center Access' },
+    { id: '6', label: 'Top Secret Clearance' },
+  ]},
+  { id: 'asset_conditions', name: 'Asset Conditions', description: 'Physical condition states for assets', hasColor: true, items: [
+    { id: '1', label: 'New',         color: '#10b981', system: true },
+    { id: '2', label: 'Good',        color: '#3b82f6', system: true },
+    { id: '3', label: 'Fair',        color: '#f59e0b', system: true },
+    { id: '4', label: 'Poor',        color: '#ef4444', system: true },
+    { id: '5', label: 'For Disposal', color: '#6b7280', system: false },
+  ]},
+  { id: 'wo_types', name: 'Work Order Types', description: 'Categories of maintenance and service work orders', items: [
+    { id: '1', label: 'Preventive Maintenance', system: true },
+    { id: '2', label: 'Corrective / Repair',    system: true },
+    { id: '3', label: 'Inspection',             system: true },
+    { id: '4', label: 'Installation',           system: false },
+    { id: '5', label: 'Decommission',           system: false },
+    { id: '6', label: 'Calibration',            system: false },
+  ]},
+];
 
 export const INITIAL_CATEGORIES: AssetCategory[] = [
   { id: 'c1', name: 'IT Equipment', types: [
@@ -92,23 +152,31 @@ export const INITIAL_NAMING_SCHEMAS: NamingSchema[] = [
 export const SettingsContext = createContext<{
   isOrg: boolean;
   selectedOrg: OrgScopeItem;
+  orgs: OrgScopeItem[];
   refreshOrgs: () => void;
   assetCategories: AssetCategory[];
   setAssetCategories: React.Dispatch<React.SetStateAction<AssetCategory[]>>;
   namingSchemas: NamingSchema[];
   setNamingSchemas: React.Dispatch<React.SetStateAction<NamingSchema[]>>;
+  referenceGroups: ReferenceGroup[];
+  setReferenceGroups: React.Dispatch<React.SetStateAction<ReferenceGroup[]>>;
   tenantConfig: TenantConfigData | null;
   setTenantConfig: React.Dispatch<React.SetStateAction<TenantConfigData | null>>;
+  saveTenantSettings: (patch: Record<string, unknown>) => Promise<void>;
 }>({
   isOrg: false,
   selectedOrg: { id: 'tenant', name: 'Tenant', sub: 'Tenant settings', isTenant: true },
+  orgs: [{ id: 'tenant', name: 'Tenant', sub: 'Tenant settings', isTenant: true }],
   refreshOrgs: () => {},
   assetCategories: INITIAL_CATEGORIES,
   setAssetCategories: () => {},
   namingSchemas: INITIAL_NAMING_SCHEMAS,
   setNamingSchemas: () => {},
+  referenceGroups: INITIAL_REFERENCE_GROUPS,
+  setReferenceGroups: () => {},
   tenantConfig: null,
   setTenantConfig: () => {},
+  saveTenantSettings: async () => {},
 });
 
 // ---------------------------------------------------------------------------
@@ -177,7 +245,20 @@ export const Badge = ({ children, color = 'slate' }: { children: React.ReactNode
 export const OrgSettingRow = ({ label, description, tenantValue, children, defaultOverridden = false }: {
   label: string; description?: string; tenantValue: string; children: React.ReactNode; defaultOverridden?: boolean;
 }) => {
-  const [overridden, setOverridden] = useState(defaultOverridden);
+  const { selectedOrg, tenantConfig, saveTenantSettings } = useContext(SettingsContext);
+  const orgKey = selectedOrg.id;
+  const persistedOverrides = (tenantConfig?.settings?.org_overrides?.[orgKey] ?? {}) as Record<string, boolean>;
+  const isPersisted = typeof persistedOverrides[label] === 'boolean' ? persistedOverrides[label] : undefined;
+  const [localOverridden, setLocalOverridden] = useState(defaultOverridden);
+  const overridden = isPersisted !== undefined ? isPersisted : localOverridden;
+
+  const toggleOverride = (next: boolean) => {
+    setLocalOverridden(next);
+    const currentAll = { ...(tenantConfig?.settings?.org_overrides ?? {}) };
+    currentAll[orgKey] = { ...(currentAll[orgKey] ?? {}), [label]: next };
+    void saveTenantSettings({ org_overrides: currentAll });
+  };
+
   return (
     <div className="grid grid-cols-[1fr_auto] gap-x-8 items-start py-4 border-b border-theme-border last:border-0">
       <div className="min-w-0">
@@ -188,7 +269,7 @@ export const OrgSettingRow = ({ label, description, tenantValue, children, defau
         {overridden ? (
           <>
             {children}
-            <button onClick={() => setOverridden(false)} className="flex items-center gap-1 text-theme-xs text-theme-text-subtle hover:text-amber-600 transition-colors">
+            <button onClick={() => toggleOverride(false)} className="flex items-center gap-1 text-theme-xs text-theme-text-subtle hover:text-amber-600 transition-colors">
               <RotateCcw size={11} /> Reset to tenant
             </button>
           </>
@@ -198,7 +279,7 @@ export const OrgSettingRow = ({ label, description, tenantValue, children, defau
               <Link2 size={11} className="shrink-0" />
               <span className="max-w-[180px] truncate">{tenantValue}</span>
             </div>
-            <button onClick={() => setOverridden(true)} className="flex items-center gap-1 text-theme-xs text-theme-primary hover:text-theme-primary-hover transition-colors">
+            <button onClick={() => toggleOverride(true)} className="flex items-center gap-1 text-theme-xs text-theme-primary hover:text-theme-primary-hover transition-colors">
               Override <ChevronRight size={11} />
             </button>
           </>

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   SettingsContext, TenantConfigData, apiFetch,
-  SectionHeader, SettingRow, Input, Select, Badge, SaveBar, Toggle,
+  SectionHeader, SettingRow, OrgSettingRow, Input, Select, Badge, SaveBar, Toggle,
 } from './SettingsShared';
 import { useApiQuery } from '../../hooks/useApi';
 import { getAccessToken } from '../../lib/api';
@@ -25,7 +25,8 @@ interface AuditLogEntry {
 // ---------------------------------------------------------------------------
 
 export function CertificatesTab() {
-  const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const { isOrg, tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const Row = isOrg ? OrgSettingRow : SettingRow;
   const pki = tenantConfig?.settings?.pki as Record<string, string> | undefined;
   const [tsaUrl, setTsaUrl] = useState('http://timestamp.digicert.com');
   const [tsaVendor, setTsaVendor] = useState('DigiCert');
@@ -43,9 +44,36 @@ export function CertificatesTab() {
 
   const certCn = tenantConfig?.name || 'Inverum Tenant';
   const certOrg = tenantConfig?.code || 'INV';
+  const countryCodeMap: Record<string, string> = {
+    Croatia: 'HR',
+    Germany: 'DE',
+    Austria: 'AT',
+    Slovenia: 'SI',
+    Serbia: 'RS',
+  };
+  const certCountry = countryCodeMap[tenantConfig?.settings?.country || 'Croatia'] || 'HR';
+  const isCertModuleDisabled = tenantConfig?.modules?.certificates === false;
+
+  const enableCertModule = () => {
+    apiFetch<TenantConfigData>('/tenants/config/modules', {
+      method: 'PATCH',
+      body: JSON.stringify({ certificates: true }),
+    }).then((cfg) => {
+      setTenantConfig(cfg);
+      window.dispatchEvent(new CustomEvent('inverum-modules-updated', { detail: cfg.modules }));
+    }).catch(() => {});
+  };
 
   return (
     <div className="max-w-2xl space-y-8">
+      {isCertModuleDisabled && (
+        <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-theme-xs">
+          <span>The <strong>Certificates &amp; PKI</strong> module is currently disabled in <strong>Modules</strong>.</span>
+          <button onClick={enableCertModule} className="px-3 py-1 bg-amber-600 text-white rounded font-medium hover:bg-amber-700 transition-colors">
+            Enable Module
+          </button>
+        </div>
+      )}
       <div>
         <SectionHeader title="Document Signing" description="Certificate resolution: User cert → Organization cert → Tenant cert. Used to sign PDFs, work orders, and approval documents." />
         <div className="p-4 bg-theme-bg border border-theme-border rounded-lg mb-4">
@@ -68,10 +96,10 @@ export function CertificatesTab() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <ShieldCheck size={14} className="text-emerald-500" />
-                <span className="text-theme-sm font-medium text-theme-text">CN={certCn}, O={certOrg}, C=HR</span>
+                <span className="text-theme-sm font-medium text-theme-text">CN={certCn}, O={certOrg}, C={certCountry}</span>
                 <Badge color="blue">auto-generated</Badge>
               </div>
-              <p className="text-theme-xs text-theme-text-muted">Issuer: Self-signed (auto-generated)</p>
+              <p className="text-theme-xs text-theme-text-muted">Issuer: Self-signed (auto-generated · synced with General → Country)</p>
               <p className="text-theme-xs text-theme-text-subtle font-mono">SHA-256: 4A:3B:...:FF</p>
               <div className="flex items-center gap-2 mt-2">
                 <Clock size={11} className="text-theme-text-muted" />
@@ -128,11 +156,11 @@ export function CertificatesTab() {
 
       <div>
         <SectionHeader title="Timestamp Authority (TSA)" description="Trusted third-party timestamp for legally binding document signing" />
-        <SettingRow label="TSA URL"><Input value={tsaUrl} onChange={setTsaUrl} className="w-72" /></SettingRow>
-        <SettingRow label="TSA Vendor"><Input value={tsaVendor} onChange={setTsaVendor} className="w-44" /></SettingRow>
-        <SettingRow label="Expiry Alert Threshold" description="Notify before certificate expires">
+        <Row label="TSA URL" tenantValue={pki?.tsaUrl || 'http://timestamp.digicert.com'}><Input value={tsaUrl} onChange={setTsaUrl} className="w-72" /></Row>
+        <Row label="TSA Vendor" tenantValue={pki?.tsaVendor || 'DigiCert'}><Input value={tsaVendor} onChange={setTsaVendor} className="w-44" /></Row>
+        <Row label="Expiry Alert Threshold" description="Notify before certificate expires (used by Automation Rules)" tenantValue={pki?.expiryAlert || '30 days'}>
           <Select value={expiryAlert} onChange={setExpiryAlert} options={['7 days', '14 days', '30 days', '60 days', '90 days']} className="w-36" />
-        </SettingRow>
+        </Row>
         <SaveBar onSave={() => {
           apiFetch<TenantConfigData>('/tenants/config/settings', {
             method: 'PATCH',
@@ -150,14 +178,116 @@ export function CertificatesTab() {
 // Automation, Audit & Printing Tabs
 // ---------------------------------------------------------------------------
 
+interface AutomationRuleItem {
+  id: string;
+  name: string;
+  description: string;
+  linkedSetting: string;
+  moduleKey?: string;
+  enabled: boolean;
+}
+
 export function AutomationTab() {
+  const { tenantConfig, saveTenantSettings } = useContext(SettingsContext);
+  const pkiExpiry = (tenantConfig?.settings?.pki as Record<string, string> | undefined)?.expiryAlert || '30 days';
+  const secCfg = (tenantConfig?.settings?.security ?? {}) as Record<string, unknown>;
+  const fourEyesActive = secCfg.fourEyes === true;
+  const requireReasonActive = secCfg.requireReason !== false;
+
+  const defaultRules: AutomationRuleItem[] = [
+    {
+      id: 'cert_expiry',
+      name: `X.509 & PKI Certificate Expiry Alert (${pkiExpiry})`,
+      description: `Automatically notifies owners and creates a renewal task ${pkiExpiry} before a certificate expires.`,
+      linkedSetting: `Certificates & PKI → Expiry Alert Threshold (${pkiExpiry})`,
+      moduleKey: 'certificates',
+      enabled: true,
+    },
+    {
+      id: 'warranty_expiry',
+      name: 'Asset Warranty & Calibration Due Reminder',
+      description: 'Generates a preventive work order 30 days before asset warranty or calibration date expires.',
+      linkedSetting: 'Asset Types → Custom Fields & Maintenance',
+      moduleKey: 'maintenance',
+      enabled: true,
+    },
+    {
+      id: 'supply_reorder',
+      name: 'Low Stock Supply Auto-Reorder Notification',
+      description: 'Triggers a procurement alert when any consumable or spare part drops below its minimum threshold.',
+      linkedSetting: 'Modules → Supplies',
+      moduleKey: 'supplies',
+      enabled: true,
+    },
+    {
+      id: 'decommission_guard',
+      name: 'Decommission Audit & 4-Eyes Approval Gate',
+      description: `Enforces mandatory decommission reason (${requireReasonActive ? 'ON' : 'OFF'}) and 4-Eyes dual approval (${fourEyesActive ? 'ON' : 'OFF'}) on sensitive assets.`,
+      linkedSetting: 'Security → 4-Eyes Principle & Asset Security',
+      enabled: true,
+    },
+    {
+      id: 'sop_checklist_lock',
+      name: 'SOP Checklist Transition Lock',
+      description: 'Prevents asset status transition to Active/Decommissioned until all attached SOP checklist items are signed off.',
+      linkedSetting: 'Modules → SOP Checklists',
+      moduleKey: 'checklists',
+      enabled: true,
+    },
+  ];
+
+  const [rules, setRules] = useState<AutomationRuleItem[]>(defaultRules);
+
+  useEffect(() => {
+    const saved = tenantConfig?.settings?.automation_rules;
+    if (saved && Array.isArray(saved) && saved.length > 0) {
+      const enabledMap = new Map(saved.map(r => [String(r.id), Boolean(r.enabled)]));
+      setRules(defaultRules.map(r => ({
+        ...r,
+        enabled: enabledMap.has(r.id) ? enabledMap.get(r.id)! : r.enabled,
+      })));
+    } else {
+      setRules(defaultRules);
+    }
+  }, [pkiExpiry, fourEyesActive, requireReasonActive, tenantConfig?.settings?.automation_rules]);
+
+  const toggleRule = (id: string) => {
+    const next = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
+    setRules(next);
+    void saveTenantSettings({
+      automation_rules: next.map(r => ({ id: r.id, enabled: r.enabled })),
+    });
+  };
+
   return (
-    <div className="max-w-lg flex flex-col items-center justify-center py-20 mx-auto text-center">
-      <div className="w-12 h-12 bg-theme-bg border border-theme-border rounded-full flex items-center justify-center mb-4">
-        <Bot size={20} className="text-theme-text-muted" />
+    <div className="max-w-3xl">
+      <SectionHeader
+        title="Automation Rules"
+        description="System-wide lifecycle automations connected to Security, Certificates & PKI, Modules, and Asset Types"
+      />
+      <div className="space-y-3">
+        {rules.map((r) => {
+          const modDisabled = r.moduleKey && tenantConfig?.modules?.[r.moduleKey] === false;
+          return (
+            <div key={r.id} className={`p-4 rounded-lg border transition-colors ${r.enabled && !modDisabled ? 'border-theme-border bg-theme-surface' : 'border-theme-border bg-theme-bg opacity-60'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Bot size={14} className="text-theme-primary shrink-0" />
+                    <span className="text-theme-sm font-semibold text-theme-text">{r.name}</span>
+                    {modDisabled && <Badge color="amber">Module disabled in Modules</Badge>}
+                  </div>
+                  <p className="text-theme-xs text-theme-text-muted">{r.description}</p>
+                  <p className="text-[11px] text-theme-text-subtle">
+                    Linked setting: <span className="font-medium text-theme-text-muted">{r.linkedSetting}</span>
+                  </p>
+                </div>
+                <Toggle value={r.enabled && !modDisabled} onChange={() => toggleRule(r.id)} />
+              </div>
+            </div>
+          );
+        })}
       </div>
-      <p className="text-theme-text font-medium mb-1">Automation Rules</p>
-      <p className="text-theme-sm text-theme-text-muted">Trigger-based automation for asset lifecycle, notifications, and integrations. Coming in Phase 3.</p>
     </div>
   );
 }

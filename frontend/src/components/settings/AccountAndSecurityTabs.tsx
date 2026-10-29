@@ -17,7 +17,7 @@ import type { PagedResponse } from '../../types/api';
 // ---------------------------------------------------------------------------
 
 export function GeneralOrgTab() {
-  const { selectedOrg, tenantConfig, refreshOrgs } = useContext(SettingsContext);
+  const { selectedOrg, orgs, tenantConfig, refreshOrgs } = useContext(SettingsContext);
   const [friendlyName, setFriendlyName] = useState(selectedOrg.name);
   const [orgType, setOrgType] = useState('Legal entity');
   const [parent, setParent] = useState(tenantConfig?.name || '— none —');
@@ -29,6 +29,12 @@ export function GeneralOrgTab() {
     setDescription(selectedOrg.description || '');
     if (tenantConfig?.name) setParent(tenantConfig.name);
   }, [selectedOrg, tenantConfig?.name]);
+
+  const parentOptions = [
+    '— none —',
+    ...(tenantConfig?.name ? [tenantConfig.name] : []),
+    ...orgs.filter(o => !o.isTenant && o.id !== selectedOrg.id).map(o => o.name),
+  ];
 
   return (
     <div className="max-w-2xl">
@@ -47,7 +53,7 @@ export function GeneralOrgTab() {
         <Select value={orgType} onChange={setOrgType} options={['Legal entity', 'Division', 'Branch', 'Department', 'Subsidiary']} className="w-44" />
       </SettingRow>
       <SettingRow label="Parent Organization" description="Leave empty if top-level">
-        <Select value={parent} onChange={setParent} options={['— none —', ...(tenantConfig?.name ? [tenantConfig.name] : [])]} className="w-52" />
+        <Select value={parent} onChange={setParent} options={parentOptions} className="w-52" />
       </SettingRow>
       <SettingRow label="Primary Contact / Manager">
         <Input value={contact} onChange={setContact} className="w-44" />
@@ -158,8 +164,41 @@ export function GeneralTab() {
       <SettingRow label="Logo (square)" description="Favicon, mobile icon, org selector. 64×64px, SVG preferred.">
         <LogoUpload aspect="square" />
       </SettingRow>
-      <div className="mt-8 mb-6"><SectionHeader title="Regional" description="Affects all date, number and currency displays" /></div>
-      <SettingRow label="Country"><Select value={country} onChange={setCountry} options={['Croatia', 'Germany', 'Austria', 'Slovenia', 'Serbia']} className="w-40" /></SettingRow>
+      <div className="mt-8 mb-6"><SectionHeader title="Regional" description="Affects all date, number, currency displays, and Legal Entity country defaults" /></div>
+      <SettingRow label="Country" description="Automatically suggests regional defaults and syncs with Legal Entity">
+        <Select
+          value={country}
+          onChange={(nextCountry) => {
+            setCountry(nextCountry);
+            if (nextCountry === 'Croatia') {
+              setCurrency('EUR — Euro');
+              setTimezone('Europe/Zagreb');
+              setLanguage('Hrvatski');
+              setDateFormat('DD.MM.YYYY');
+              setDecimal(', (comma)');
+            } else if (nextCountry === 'Germany' || nextCountry === 'Austria') {
+              setCurrency('EUR — Euro');
+              setTimezone('Europe/Berlin');
+              setLanguage('Deutsch');
+              setDateFormat('DD.MM.YYYY');
+              setDecimal(', (comma)');
+            } else if (nextCountry === 'Slovenia') {
+              setCurrency('EUR — Euro');
+              setTimezone('Europe/Zagreb');
+              setLanguage('Slovenščina');
+              setDateFormat('DD.MM.YYYY');
+              setDecimal(', (comma)');
+            } else if (nextCountry === 'Serbia') {
+              setCurrency('EUR — Euro');
+              setTimezone('Europe/Zagreb');
+              setDateFormat('DD.MM.YYYY');
+              setDecimal(', (comma)');
+            }
+          }}
+          options={['Croatia', 'Germany', 'Austria', 'Slovenia', 'Serbia']}
+          className="w-40"
+        />
+      </SettingRow>
       <SettingRow label="Currency"><Select value={currency} onChange={setCurrency} options={['EUR — Euro', 'USD — Dollar', 'HRK — Kuna (legacy)', 'GBP — Pound']} className="w-44" /></SettingRow>
       <SettingRow label="Timezone"><Select value={timezone} onChange={setTimezone} options={['Europe/Zagreb', 'Europe/Berlin', 'UTC', 'America/New_York']} className="w-44" /></SettingRow>
       <SettingRow label="Language" description="Default UI language for new users"><Select value={language} onChange={setLanguage} options={['English', 'Hrvatski', 'Deutsch', 'Slovenščina']} className="w-40" /></SettingRow>
@@ -280,12 +319,61 @@ interface ApiLegalEntity {
   contact_email?: string | null;
 }
 
+const COUNTRY_LEGAL_PRESETS: Record<string, { label: string; ids: Array<{ label: string; placeholder: string }> }> = {
+  'Croatia (HR)': {
+    label: 'Croatia (HR)',
+    ids: [
+      { label: 'OIB', placeholder: '11-digit OIB' },
+      { label: 'VAT Number (PDV ID)', placeholder: 'HR12345678901' },
+      { label: 'MBS (Court Register)', placeholder: '080012345' },
+    ],
+  },
+  'Germany (DE)': {
+    label: 'Germany (DE)',
+    ids: [
+      { label: 'Steuernummer', placeholder: '12/345/67890' },
+      { label: 'USt-IdNr.', placeholder: 'DE123456789' },
+      { label: 'Handelsregister (HRB)', placeholder: 'HRB 123456' },
+    ],
+  },
+  'Austria (AT)': {
+    label: 'Austria (AT)',
+    ids: [
+      { label: 'UID-Nummer', placeholder: 'ATU12345678' },
+      { label: 'Firmenbuchnummer (FN)', placeholder: 'FN 123456a' },
+    ],
+  },
+  'Slovenia (SI)': {
+    label: 'Slovenia (SI)',
+    ids: [
+      { label: 'Davčna številka', placeholder: 'SI12345678' },
+      { label: 'Matična številka', placeholder: '1234567000' },
+    ],
+  },
+  'Serbia (RS)': {
+    label: 'Serbia (RS)',
+    ids: [
+      { label: 'PIB', placeholder: '101234567' },
+      { label: 'Matični broj', placeholder: '12345678' },
+    ],
+  },
+};
+
+const GENERAL_TO_LEGAL_COUNTRY: Record<string, string> = {
+  Croatia: 'Croatia (HR)',
+  Germany: 'Germany (DE)',
+  Austria: 'Austria (AT)',
+  Slovenia: 'Slovenia (SI)',
+  Serbia: 'Serbia (RS)',
+};
+
 export function LegalTab() {
   const { tenantConfig } = useContext(SettingsContext);
   const { data: legalData, refetch: refetchLegal } = useApiQuery<PagedResponse<ApiLegalEntity> | ApiLegalEntity[]>('/legal-entities/?limit=50');
   const [entityId, setEntityId] = useState<string | null>(null);
   const [legalName, setLegalName] = useState(tenantConfig?.name || '');
-  const [country, setCountry] = useState('Croatia (HR)');
+  const defaultCountry = GENERAL_TO_LEGAL_COUNTRY[tenantConfig?.settings?.country || 'Croatia'] || 'Croatia (HR)';
+  const [country, setCountry] = useState(defaultCountry);
   const [address, setAddress] = useState('');
   const [iban, setIban] = useState('');
   const [responsible, setResponsible] = useState('');
@@ -293,11 +381,33 @@ export function LegalTab() {
 
   const [identifiers, setIdentifiers] = useState<LegalId[]>([
     { id: '1', label: 'OIB', value: '' },
-    { id: '2', label: 'VAT Number', value: '' },
+    { id: '2', label: 'VAT Number (PDV ID)', value: '' },
+    { id: '3', label: 'MBS (Court Register)', value: '' },
   ]);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newValue, setNewValue] = useState('');
+
+  useEffect(() => {
+    if (tenantConfig?.settings?.country) {
+      const mapped = GENERAL_TO_LEGAL_COUNTRY[tenantConfig.settings.country];
+      if (mapped) setCountry(mapped);
+    }
+  }, [tenantConfig?.settings?.country]);
+
+  const applyCountryPreset = (targetCountry: string) => {
+    setCountry(targetCountry);
+    const preset = COUNTRY_LEGAL_PRESETS[targetCountry];
+    if (!preset) return;
+    setIdentifiers(prev => {
+      const existingValues = new Map(prev.map(i => [i.label.toLowerCase(), i.value]));
+      return preset.ids.map((item, idx) => ({
+        id: String(idx + 1),
+        label: item.label,
+        value: existingValues.get(item.label.toLowerCase()) || '',
+      }));
+    });
+  };
 
   useEffect(() => {
     const list = Array.isArray(legalData) ? legalData : legalData?.items;
@@ -336,8 +446,8 @@ export function LegalTab() {
     <div className="max-w-2xl">
       <SectionHeader title="Legal Entity" description="Used on shipping labels, PDF exports, and official documents" />
       <SettingRow label="Legal Name"><Input value={legalName} onChange={setLegalName} className="w-64" /></SettingRow>
-      <SettingRow label="Country of Incorporation">
-        <Select value={country} onChange={setCountry} options={['Croatia (HR)', 'Germany (DE)', 'Austria (AT)']} className="w-44" />
+      <SettingRow label="Country of Incorporation" description={`Synced with General → Country (${tenantConfig?.settings?.country || 'Croatia'}). Switching updates statutory tax identifier fields.`}>
+        <Select value={country} onChange={applyCountryPreset} options={Object.keys(COUNTRY_LEGAL_PRESETS)} className="w-48" />
       </SettingRow>
 
       <div className="mt-6 mb-2">
@@ -410,7 +520,7 @@ export function LegalTab() {
 // ---------------------------------------------------------------------------
 
 export function SecurityTab() {
-  const { isOrg, tenantConfig, setTenantConfig } = useContext(SettingsContext);
+  const { isOrg, tenantConfig, setTenantConfig, referenceGroups } = useContext(SettingsContext);
   const Row = isOrg ? OrgSettingRow : SettingRow;
   const sec = tenantConfig?.settings?.security as Record<string, unknown> | undefined;
 
@@ -449,6 +559,16 @@ export function SecurityTab() {
     if (typeof sec.requireReason === 'boolean') setRequireReason(sec.requireReason);
   }, [sec]);
 
+  const activeMethodsSummary = [
+    localAuth && 'Local',
+    ldapAuth && 'LDAP',
+    m365Auth && 'M365',
+    googleAuth && 'Google',
+    samlAuth && 'SAML',
+  ].filter(Boolean).join(', ') || 'None';
+
+  const classificationLevels = referenceGroups.find(g => g.id === 'classification')?.items ?? [];
+
   return (
     <div className="max-w-2xl">
       {isOrg && (
@@ -458,13 +578,13 @@ export function SecurityTab() {
         </div>
       )}
       <SectionHeader title="Authentication" />
-      <Row label="Enforce 2FA" description="All users must configure two-factor authentication" tenantValue="Enabled">
+      <Row label="Enforce 2FA" description="All users must configure two-factor authentication" tenantValue={sec?.enforce2fa === false ? 'Disabled' : 'Enabled'}>
         <Toggle value={enforce2fa} onChange={setEnforce2fa} />
       </Row>
-      <Row label="Session Timeout" description="Auto logout after inactivity" tenantValue="8 hours">
+      <Row label="Session Timeout" description="Auto logout after inactivity" tenantValue={typeof sec?.sessionTimeout === 'string' ? sec.sessionTimeout : '8 hours'}>
         <Select value={sessionTimeout} onChange={setSessionTimeout} options={['30 minutes', '1 hour', '4 hours', '8 hours', '24 hours', 'Never']} className="w-36" />
       </Row>
-      <Row label="Allowed Auth Methods" tenantValue="Local, LDAP">
+      <Row label="Allowed Auth Methods" description="Synced with SSO / Identity providers" tenantValue={activeMethodsSummary}>
         <div className="flex flex-col gap-2">
           {([['Local password', localAuth, setLocalAuth], ['LDAP / Active Directory', ldapAuth, setLdapAuth], ['Microsoft 365', m365Auth, setM365Auth], ['Google Workspace', googleAuth, setGoogleAuth], ['SAML 2.0', samlAuth, setSamlAuth]] as const).map(([label, val, setter]) => (
             <label key={label as string} className="flex items-center gap-2 cursor-pointer">
@@ -474,27 +594,52 @@ export function SecurityTab() {
           ))}
         </div>
       </Row>
-      <div className="mt-8 mb-2"><SectionHeader title="Password Policy" description="Applies to local password authentication only" /></div>
-      <Row label="Minimum Length" tenantValue="12 characters">
-        <Input value={minLength} onChange={setMinLength} className="w-20" />
-      </Row>
-      <Row label="Require Uppercase" tenantValue="Enabled"><Toggle value={pwUppercase} onChange={setPwUppercase} /></Row>
-      <Row label="Require Number" tenantValue="Enabled"><Toggle value={pwNumber} onChange={setPwNumber} /></Row>
-      <Row label="Require Special Character" tenantValue="Enabled"><Toggle value={pwSpecial} onChange={setPwSpecial} /></Row>
-      <Row label="Password Expiry" tenantValue="90 days">
-        <Select value={pwExpiry} onChange={setPwExpiry} options={['Never', '30 days', '60 days', '90 days', '180 days', '1 year']} className="w-36" />
-      </Row>
-      <div className="mt-8"><SectionHeader title="Classification Security" description="Behaviour when a user accesses an asset above their clearance" /></div>
-      <Row label="Clearance Mismatch Action" tenantValue="Warn">
+      <div className="mt-8 mb-2">
+        <SectionHeader title="Password Policy" description="Applies to local password authentication only" />
+        {!localAuth && (
+          <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-theme-xs text-amber-700">
+            Local password authentication is disabled above — password complexity rules are currently inactive.
+          </div>
+        )}
+      </div>
+      <div className={!localAuth ? 'opacity-50 pointer-events-none' : ''}>
+        <Row label="Minimum Length" tenantValue={`${typeof sec?.minLength === 'string' ? sec.minLength : '12'} characters`}>
+          <Input value={minLength} onChange={setMinLength} className="w-20" />
+        </Row>
+        <Row label="Require Uppercase" tenantValue={sec?.pwUppercase === false ? 'Disabled' : 'Enabled'}><Toggle value={pwUppercase} onChange={setPwUppercase} /></Row>
+        <Row label="Require Number" tenantValue={sec?.pwNumber === false ? 'Disabled' : 'Enabled'}><Toggle value={pwNumber} onChange={setPwNumber} /></Row>
+        <Row label="Require Special Character" tenantValue={sec?.pwSpecial === false ? 'Disabled' : 'Enabled'}><Toggle value={pwSpecial} onChange={setPwSpecial} /></Row>
+        <Row label="Password Expiry" tenantValue={typeof sec?.pwExpiry === 'string' ? sec.pwExpiry : '90 days'}>
+          <Select value={pwExpiry} onChange={setPwExpiry} options={['Never', '30 days', '60 days', '90 days', '180 days', '1 year']} className="w-36" />
+        </Row>
+      </div>
+      <div className="mt-8">
+        <SectionHeader title="Classification Security" description="Behaviour when a user accesses an asset above their clearance (linked to Reference Data → Classification Levels)" />
+        {classificationLevels.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap mb-3 px-3 py-2 bg-theme-bg border border-theme-border rounded-lg">
+            <span className="text-theme-xs text-theme-text-subtle mr-1">Active hierarchy:</span>
+            {classificationLevels.map((lvl, idx) => (
+              <React.Fragment key={lvl.id}>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-theme-xs font-medium bg-theme-surface border border-theme-border text-theme-text">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lvl.color || '#64748b' }} />
+                  {lvl.label} {lvl.code && <span className="font-mono text-[10px] text-theme-text-subtle">({lvl.code})</span>}
+                </span>
+                {idx < classificationLevels.length - 1 && <ChevronRight size={11} className="text-theme-text-subtle" />}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+      <Row label="Clearance Mismatch Action" tenantValue={typeof sec?.mismatch === 'string' ? sec.mismatch : 'warn'}>
         <div className="flex gap-2 flex-wrap">
           {(['allow', 'warn', 'block'] as const).map((v) => (
             <button key={v} onClick={() => setMismatch(v)} className={`px-3 py-1 rounded text-theme-xs font-medium capitalize transition-colors ${mismatch === v ? v === 'block' ? 'bg-red-50 text-red-600 border border-red-200' : v === 'warn' ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-theme-bg text-theme-text-muted border border-theme-border hover:border-theme-border-strong'}`}>{v}</button>
           ))}
         </div>
       </Row>
-      <Row label="4-Eyes Principle" description="Sensitive actions require approval from a second user" tenantValue="Disabled"><Toggle value={fourEyes} onChange={setFourEyes} /></Row>
+      <Row label="4-Eyes Principle" description="Sensitive actions require approval from a second user" tenantValue={sec?.fourEyes === true ? 'Enabled' : 'Disabled'}><Toggle value={fourEyes} onChange={setFourEyes} /></Row>
       <div className="mt-8"><SectionHeader title="Asset Security" /></div>
-      <Row label="Require Reason on Decommission" description="User must enter a reason when decommissioning an asset" tenantValue="Enabled"><Toggle value={requireReason} onChange={setRequireReason} /></Row>
+      <Row label="Require Reason on Decommission" description="User must enter a reason when decommissioning an asset" tenantValue={sec?.requireReason === false ? 'Disabled' : 'Enabled'}><Toggle value={requireReason} onChange={setRequireReason} /></Row>
       <SaveBar onSave={() => {
         apiFetch<TenantConfigData>('/tenants/config/settings', {
           method: 'PATCH',
@@ -556,7 +701,7 @@ function LdapBasicPanel({ getField, setField, onSave }: { getField: (l: string) 
   );
 }
 
-function LdapAdvancedPanel({ isEnterprise }: { isEnterprise: boolean }) {
+function LdapAdvancedPanel({ isEnterprise, roleOptions }: { isEnterprise: boolean; roleOptions: string[] }) {
   const [groupMappings, setGroupMappings] = useState<GroupMapping[]>([
     { id: '1', adGroup: 'CN=IT Admins,OU=Groups,DC=posta,DC=hr', role: 'IT Technician', scope: 'direct' },
     { id: '2', adGroup: 'CN=All Users,OU=Groups,DC=posta,DC=hr', role: 'Viewer', scope: 'nested' },
@@ -635,7 +780,7 @@ function LdapAdvancedPanel({ isEnterprise }: { isEnterprise: boolean }) {
                       onKeyDown={(e) => { if (e.key === 'Enter') addGroupMapping(); if (e.key === 'Escape') { setAddingGroup(false); setNewGroup(''); } }} />
                   </td>
                   <td className="px-4 py-2">
-                    <Select value={newRole} onChange={setNewRole} options={['Super Admin', 'Asset Manager', 'IT Technician', 'Warehouse', 'Viewer']} className="w-36" />
+                    <Select value={newRole} onChange={setNewRole} options={roleOptions} className="w-36" />
                   </td>
                   <td className="px-4 py-2">
                     <Select value={newScope} onChange={(v) => setNewScope(v as 'direct' | 'nested')} options={['direct', 'nested']} className="w-28" />
@@ -810,6 +955,12 @@ function LdapAdvancedPanel({ isEnterprise }: { isEnterprise: boolean }) {
 export function SSOTab() {
   const { isOrg, tenantConfig, setTenantConfig } = useContext(SettingsContext);
   const ssoCfg = tenantConfig?.settings?.sso as Record<string, unknown> | undefined;
+  const secCfg = (tenantConfig?.settings?.security ?? {}) as Record<string, unknown>;
+  const customRoles = tenantConfig?.settings?.roles_custom ?? [];
+  const roleOptions = Array.from(new Set([
+    'Super Admin', 'Asset Manager', 'IT Technician', 'Warehouse', 'Viewer',
+    ...customRoles.map(r => r.name),
+  ]));
   const [selected, setSelected] = useState<string>('ldap');
   const [orgOverrides, setOrgOverrides] = useState<Record<string, boolean>>({});
   const [isEnterprise] = useState(true);
@@ -851,13 +1002,43 @@ export function SSOTab() {
     }).then(setTenantConfig).catch(() => {});
   };
 
+  const isProviderEnabledInSecurity = (id: string): boolean => {
+    if (id === 'local') return secCfg.localAuth !== false;
+    if (id === 'ldap')  return secCfg.ldapAuth !== false;
+    if (id === 'm365')  return secCfg.m365Auth === true;
+    if (id === 'google') return secCfg.googleAuth === true;
+    if (id === 'saml')  return secCfg.samlAuth === true;
+    return false;
+  };
+
+  const toggleProviderInSecurity = (id: string, enabled: boolean) => {
+    const keyMap: Record<string, string> = {
+      local: 'localAuth',
+      ldap: 'ldapAuth',
+      m365: 'm365Auth',
+      google: 'googleAuth',
+      saml: 'samlAuth',
+    };
+    const secKey = keyMap[id];
+    if (!secKey) return;
+    apiFetch<TenantConfigData>('/tenants/config/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        security: {
+          ...secCfg,
+          [secKey]: enabled,
+        },
+      }),
+    }).then(setTenantConfig).catch(() => {});
+  };
+
   type Provider = { id: string; name: string; icon: React.ReactNode; tier: 'opensource' | 'enterprise'; status: 'active' | 'connected' | 'disabled'; fields?: string[]; };
   const providers: Provider[] = [
-    { id: 'local',  name: 'Local',                    icon: <KeyRound size={15} />, tier: 'opensource', status: 'active' },
-    { id: 'ldap',   name: 'LDAP / Active Directory',  icon: <Server size={15} />,   tier: 'enterprise', status: 'connected' },
-    { id: 'm365',   name: 'Microsoft 365 / Entra ID', icon: <Globe size={15} />,    tier: 'enterprise', status: 'disabled', fields: ['Tenant ID', 'Client ID', 'Client Secret'] },
-    { id: 'google', name: 'Google Workspace',         icon: <Globe size={15} />,    tier: 'enterprise', status: 'disabled', fields: ['Client ID', 'Client Secret', 'Domain'] },
-    { id: 'saml',   name: 'SAML 2.0',                 icon: <KeyRound size={15} />, tier: 'enterprise', status: 'disabled', fields: ['IdP Metadata URL', 'SP Entity ID', 'ACS URL'] },
+    { id: 'local',  name: 'Local',                    icon: <KeyRound size={15} />, tier: 'opensource', status: isProviderEnabledInSecurity('local') ? 'active' : 'disabled' },
+    { id: 'ldap',   name: 'LDAP / Active Directory',  icon: <Server size={15} />,   tier: 'enterprise', status: isProviderEnabledInSecurity('ldap') ? 'connected' : 'disabled' },
+    { id: 'm365',   name: 'Microsoft 365 / Entra ID', icon: <Globe size={15} />,    tier: 'enterprise', status: isProviderEnabledInSecurity('m365') ? 'connected' : 'disabled', fields: ['Tenant ID', 'Client ID', 'Client Secret'] },
+    { id: 'google', name: 'Google Workspace',         icon: <Globe size={15} />,    tier: 'enterprise', status: isProviderEnabledInSecurity('google') ? 'connected' : 'disabled', fields: ['Client ID', 'Client Secret', 'Domain'] },
+    { id: 'saml',   name: 'SAML 2.0',                 icon: <KeyRound size={15} />, tier: 'enterprise', status: isProviderEnabledInSecurity('saml') ? 'connected' : 'disabled', fields: ['IdP Metadata URL', 'SP Entity ID', 'ACS URL'] },
   ];
 
   const cur = providers.find(p => p.id === selected)!;
@@ -886,15 +1067,23 @@ export function SSOTab() {
       </button>
     );
 
+    const curEnabled = isProviderEnabledInSecurity(cur.id);
+
     if (cur.id === 'local') {
       return (
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-theme-base font-semibold text-theme-text">Local Authentication</p>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Open Source</span>
-            <Badge color="green"><CheckCircle2 size={10} /> Always active</Badge>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <p className="text-theme-base font-semibold text-theme-text">Local Authentication</p>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Open Source</span>
+              <Badge color={curEnabled ? 'green' : 'amber'}>{curEnabled ? <><CheckCircle2 size={10} /> Active</> : 'Fallback only'}</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-theme-xs text-theme-text-subtle">Allowed on login</span>
+              <Toggle value={curEnabled} onChange={(v) => toggleProviderInSecurity('local', v)} />
+            </div>
           </div>
-          <p className="text-theme-xs text-theme-text-muted mb-6">Username and password authentication. Cannot be fully disabled — always available as fallback.</p>
+          <p className="text-theme-xs text-theme-text-muted mb-6">Username and password authentication. Synced with Security → Allowed Auth Methods.</p>
           <div className="p-4 bg-theme-bg border border-theme-border rounded-lg text-theme-sm text-theme-text-muted space-y-1.5">
             <p>Allowed authentication methods (including enabling/disabling local login on the login page) → <strong className="text-theme-text">Security</strong> tab.</p>
             <p>Password complexity, lockout policy, and session settings → <strong className="text-theme-text">Security</strong> tab.</p>
@@ -909,11 +1098,17 @@ export function SSOTab() {
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <p className="text-theme-base font-semibold text-theme-text">LDAP / Active Directory</p>
-              <Badge color="green"><CheckCircle2 size={10} /> Connected</Badge>
+              <Badge color={curEnabled ? 'green' : 'slate'}>{curEnabled ? <><CheckCircle2 size={10} /> Connected</> : 'Disabled in Security'}</Badge>
             </div>
-            {resetBtn}
+            <div className="flex items-center gap-3">
+              {resetBtn}
+              <div className="flex items-center gap-2">
+                <span className="text-theme-xs text-theme-text-subtle">Enabled</span>
+                <Toggle value={curEnabled} onChange={(v) => toggleProviderInSecurity('ldap', v)} />
+              </div>
+            </div>
           </div>
-          <p className="text-theme-xs text-theme-text-muted mb-4">Authenticate users against your directory. Enterprise plan required for group mappings and employee sync.</p>
+          <p className="text-theme-xs text-theme-text-muted mb-4">Authenticate users against your directory. Synced with Security → Allowed Auth Methods.</p>
           {inheritBanner}
           {(!isOrg || isOverridden) && (
             <>
@@ -932,7 +1127,7 @@ export function SSOTab() {
               </div>
               {ldapSection === 'basic'
                 ? <LdapBasicPanel getField={(l) => ldapFields[l] ?? ''} setField={(l, v) => setLdapFields(p => ({ ...p, [l]: v }))} onSave={saveSso} />
-                : <LdapAdvancedPanel isEnterprise={isEnterprise} />
+                : <LdapAdvancedPanel isEnterprise={isEnterprise} roleOptions={roleOptions} />
               }
             </>
           )}
@@ -945,11 +1140,17 @@ export function SSOTab() {
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
             <p className="text-theme-base font-semibold text-theme-text">{cur.name}</p>
-            <Badge color="slate">Disabled</Badge>
+            <Badge color={curEnabled ? 'green' : 'slate'}>{curEnabled ? <><CheckCircle2 size={10} /> Connected</> : 'Disabled'}</Badge>
           </div>
-          {resetBtn}
+          <div className="flex items-center gap-3">
+            {resetBtn}
+            <div className="flex items-center gap-2">
+              <span className="text-theme-xs text-theme-text-subtle">Enabled</span>
+              <Toggle value={curEnabled} onChange={(v) => toggleProviderInSecurity(cur.id, v)} />
+            </div>
+          </div>
         </div>
-        <p className="text-theme-xs text-theme-text-muted mb-4">OAuth 2.0 / OIDC single sign-on via {cur.name}.</p>
+        <p className="text-theme-xs text-theme-text-muted mb-4">OAuth 2.0 / OIDC single sign-on via {cur.name}. Synced with Security → Allowed Auth Methods.</p>
         {inheritBanner}
         {(!isOrg || isOverridden) && (
           <div className="space-y-3">

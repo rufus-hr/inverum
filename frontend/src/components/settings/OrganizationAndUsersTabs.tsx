@@ -18,14 +18,25 @@ import type { PagedResponse } from '../../types/api';
 export function ModulesTab() {
   const { tenantConfig, setTenantConfig } = useContext(SettingsContext);
   const modules = [
-    { key: 'vendors', name: 'Vendors', description: 'Full vendor cards, contracts, reliability metrics, MTTR tracking.', icon: '🏭' },
-    { key: 'supplies', name: 'Supplies', description: 'Consumables, spare parts, accessories. Stock instances, movements ledger.', icon: '🛒' },
-    { key: 'storage', name: 'Storage & Boxes', description: 'Storage units (cabinets, racks, safes), shelves, drawers. Box tracking.', icon: '📦' },
-    { key: 'maintenance', name: 'Maintenance', description: 'Scheduled work orders, maintenance templates, recurring tasks.', icon: '🔧' },
-    { key: 'checklists', name: 'SOP Checklists', description: 'Attach SOP checklists to asset transitions. Asset locked until complete.', icon: '📋' },
-    { key: 'advanced_permissions', name: 'Advanced Permissions', description: 'Location and organization-scoped roles, role inheritance.', icon: '🔐' },
+    { key: 'vendors', name: 'Vendors', description: 'Full vendor cards, contracts, reliability metrics, MTTR tracking (Main Sidebar → Vendors).', icon: '🏭' },
+    { key: 'supplies', name: 'Supplies', description: 'Consumables, spare parts, accessories. Stock instances, movements ledger (Main Sidebar → Supply).', icon: '🛒' },
+    { key: 'storage', name: 'Storage & Boxes', description: 'Storage units (cabinets, racks, safes), shelves, drawers, box tracking (Main Sidebar → Boxes).', icon: '📦' },
+    { key: 'maintenance', name: 'Maintenance & Work Orders', description: 'Scheduled work orders, maintenance templates, recurring tasks (Main Sidebar → Work Orders).', icon: '🔧' },
+    { key: 'checklists', name: 'SOP Checklists', description: 'Attach SOP checklists to asset transitions. Asset locked until complete (Main Sidebar → Checklists).', icon: '📋' },
+    { key: 'certificates', name: 'Certificates & PKI', description: 'PAdES PDF signing, TSA timestamps, and X.509 certificate lifecycle (Settings → Certificates & PKI).', icon: '🔏' },
+    { key: 'reports', name: 'Compliance Reports', description: '16 ISO 27001 / NIS2 / GDPR audit reports & scheduled delivery (Settings → Reports).', icon: '📊' },
+    { key: 'advanced_permissions', name: 'Advanced Permissions', description: 'Location and organization-scoped roles, role inheritance (Settings → Roles & Permissions).', icon: '🔐' },
   ];
-  const fallback: Record<string, boolean> = { vendors: false, supplies: false, storage: false, maintenance: false, checklists: false, advanced_permissions: false };
+  const fallback: Record<string, boolean> = {
+    vendors: true,
+    supplies: true,
+    storage: true,
+    maintenance: true,
+    checklists: true,
+    certificates: true,
+    reports: true,
+    advanced_permissions: false,
+  };
   const [states, setStates] = useState<Record<string, boolean>>(fallback);
   const [confirmOff, setConfirmOff] = useState<string | null>(null);
 
@@ -34,11 +45,18 @@ export function ModulesTab() {
   }, [tenantConfig]);
 
   const patchModule = useCallback((key: string, value: boolean) => {
-    setStates(s => ({ ...s, [key]: value }));
+    setStates(s => {
+      const next = { ...s, [key]: value };
+      window.dispatchEvent(new CustomEvent('inverum-modules-updated', { detail: next }));
+      return next;
+    });
     apiFetch<TenantConfigData>('/tenants/config/modules', {
       method: 'PATCH',
       body: JSON.stringify({ [key]: value }),
-    }).then(setTenantConfig).catch(() => {});
+    }).then((cfg) => {
+      setTenantConfig(cfg);
+      window.dispatchEvent(new CustomEvent('inverum-modules-updated', { detail: cfg.modules }));
+    }).catch(() => {});
   }, [setTenantConfig]);
 
   const toggle = (key: string) => states[key] ? setConfirmOff(key) : patchModule(key, true);
@@ -284,12 +302,60 @@ const DEFAULT_TRIGGERS: Record<string, TriggerRule[]> = {
   ],
 };
 
+function useDynamicScopeFields(): Record<string, Array<{ value: string; label: string; values: string[] }>> {
+  const { assetCategories, referenceGroups } = useContext(SettingsContext);
+  const { data: locData } = useApiQuery<PagedResponse<{ name: string }> | Array<{ name: string }>>('/locations/?limit=50');
+  const { data: deptData } = useApiQuery<PagedResponse<{ name: string }> | Array<{ name: string }>>('/departments/?limit=50');
+  const { data: vendorData } = useApiQuery<PagedResponse<{ name: string }> | Array<{ name: string }>>('/vendors/?limit=50');
+
+  const locNames = (Array.isArray(locData) ? locData : locData?.items)?.map(x => x.name).filter(Boolean) ?? [];
+  const deptNames = (Array.isArray(deptData) ? deptData : deptData?.items)?.map(x => x.name).filter(Boolean) ?? [];
+  const vendorNames = (Array.isArray(vendorData) ? vendorData : vendorData?.items)?.map(x => x.name).filter(Boolean) ?? [];
+
+  const liveTypes = assetCategories.flatMap(c => c.types.map(t => t.name));
+  const liveCategories = assetCategories.map(c => c.name);
+  const liveClassifications = referenceGroups.find(g => g.id === 'classification')?.items.map(i => i.label) ?? [];
+  const liveWoTypes = referenceGroups.find(g => g.id === 'wo_types')?.items.map(i => i.label) ?? [];
+
+  const locations = locNames.length > 0 ? locNames : ['Zagreb HQ', 'Split office', 'Osijek office', 'Warehouse A', 'Server Room'];
+  const departments = deptNames.length > 0 ? deptNames : ['IT', 'Finance', 'HR', 'Operations', 'Management', 'Legal'];
+  const vendors = vendorNames.length > 0 ? vendorNames : ['Dell', 'HP', 'Lenovo', 'Cisco', 'Apple', 'Samsung'];
+
+  return {
+    ...SCOPE_FIELDS_BY_DOMAIN,
+    asset: [
+      { value: 'asset_type',     label: 'Asset Type',     values: liveTypes.length > 0 ? liveTypes : SCOPE_FIELDS_BY_DOMAIN.asset[0].values },
+      { value: 'asset_category', label: 'Asset Category', values: liveCategories.length > 0 ? liveCategories : SCOPE_FIELDS_BY_DOMAIN.asset[1].values },
+      { value: 'location',       label: 'Location',       values: locations },
+      { value: 'department',     label: 'Department',     values: departments },
+      { value: 'status',         label: 'Status',         values: ['active', 'in_repair', 'decommissioned', 'in_storage', 'assigned', 'pending'] },
+      { value: 'classification', label: 'Classification', values: liveClassifications.length > 0 ? liveClassifications : SCOPE_FIELDS_BY_DOMAIN.asset[5].values },
+      { value: 'vendor',         label: 'Vendor',         values: vendors },
+    ],
+    work_order: [
+      { value: 'wo_type',     label: 'Type',       values: liveWoTypes.length > 0 ? liveWoTypes : SCOPE_FIELDS_BY_DOMAIN.work_order[0].values },
+      { value: 'wo_priority', label: 'Priority',   values: ['low', 'normal', 'high', 'critical'] },
+      { value: 'location',    label: 'Location',   values: locations },
+      { value: 'department',  label: 'Department', values: departments },
+    ],
+    maintenance: [
+      { value: 'asset_type', label: 'Asset Type', values: liveTypes.length > 0 ? liveTypes : SCOPE_FIELDS_BY_DOMAIN.maintenance[0].values },
+      { value: 'location',   label: 'Location',   values: locations },
+    ],
+    employee: [
+      { value: 'department', label: 'Department', values: departments },
+      { value: 'location',   label: 'Location',   values: locations },
+    ],
+  };
+}
+
 function TriggerEditor({ rule, integration, onSave, onCancel }: {
   rule: Partial<TriggerRule>;
   integration: Integration;
   onSave: (r: TriggerRule) => void;
   onCancel: () => void;
 }) {
+  const dynamicScopeByDomain = useDynamicScopeFields();
   const [name,    setName]    = useState(rule.name    ?? '');
   const [event,   setEvent]   = useState(rule.event   ?? EVENTS[0].value);
   const [action,  setAction]  = useState(rule.action  ?? integration.actions[0].value);
@@ -301,7 +367,7 @@ function TriggerEditor({ rule, integration, onSave, onCancel }: {
   const [customExternalField, setCustomExternalField] = useState('');
 
   const domain = getEventDomain(event);
-  const domainFields = SCOPE_FIELDS_BY_DOMAIN[domain] ?? [];
+  const domainFields = dynamicScopeByDomain[domain] ?? [];
 
   const changeEvent = (newEvent: string) => {
     const newDomain = getEventDomain(newEvent);
@@ -910,7 +976,16 @@ interface ApiRole {
   is_system?: boolean;
 }
 
+const GROUP_TO_MODULE_KEY: Record<string, { key: string; label: string }> = {
+  Supplies:     { key: 'supplies',     label: 'Supplies' },
+  'Work Orders':{ key: 'maintenance',  label: 'Maintenance & Work Orders' },
+  Storage:      { key: 'storage',      label: 'Storage & Boxes' },
+  Certificates: { key: 'certificates', label: 'Certificates & PKI' },
+  Reports:      { key: 'reports',      label: 'Compliance Reports' },
+};
+
 export function PermissionsTab() {
+  const { tenantConfig, saveTenantSettings } = useContext(SettingsContext);
   const { data: apiRolesData } = useApiQuery<PagedResponse<ApiRole> | ApiRole[]>('/roles/?limit=50');
   const [roles, setRoles] = useState<Role[]>([
     { id: '1', name: 'Super Admin',   users: 2,  description: 'Full access to all tenant resources',        system: true },
@@ -928,6 +1003,22 @@ export function PermissionsTab() {
   const [editDesc, setEditDesc] = useState('');
 
   useEffect(() => {
+    const customRoles = tenantConfig?.settings?.roles_custom;
+    if (customRoles && Array.isArray(customRoles) && customRoles.length > 0) {
+      setRoles(customRoles.map(r => ({
+        id: r.id,
+        name: r.name,
+        users: 1,
+        description: r.description,
+        system: r.system,
+      })));
+      const map: Record<string, Set<string>> = {};
+      for (const r of customRoles) {
+        map[r.id] = new Set(r.permissions);
+      }
+      setRolePerms(map);
+      return;
+    }
     const list = Array.isArray(apiRolesData) ? apiRolesData : apiRolesData?.items;
     if (!list || list.length === 0) return;
     setRoles(list.map(r => ({
@@ -943,42 +1034,60 @@ export function PermissionsTab() {
     }
     setRolePerms(permsMap);
     setSelectedId(list[0].id);
-  }, [apiRolesData]);
+  }, [apiRolesData, tenantConfig?.settings?.roles_custom]);
+
+  const persistRoles = (nextRoles: Role[], nextPerms: Record<string, Set<string>>) => {
+    setRoles(nextRoles);
+    setRolePerms(nextPerms);
+    void saveTenantSettings({
+      roles_custom: nextRoles.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        system: r.system,
+        permissions: Array.from(nextPerms[r.id] ?? []),
+      })),
+    });
+  };
 
   const role = roles.find(r => r.id === selectedId);
   const perms = rolePerms[selectedId] ?? new Set<string>();
 
   const togglePerm = (permId: string) => {
     if (role?.system) return;
-    setRolePerms(prev => {
-      const next = new Set(prev[selectedId] ?? []);
-      if (next.has(permId)) next.delete(permId); else next.add(permId);
-      return { ...prev, [selectedId]: next };
-    });
+    const nextSet = new Set(rolePerms[selectedId] ?? []);
+    if (nextSet.has(permId)) nextSet.delete(permId); else nextSet.add(permId);
+    const nextPerms = { ...rolePerms, [selectedId]: nextSet };
+    persistRoles(roles, nextPerms);
   };
 
   const addRole = () => {
     if (!newRoleName.trim()) return;
     const id = Date.now().toString();
-    setRoles(rs => [...rs, { id, name: newRoleName.trim(), description: newRoleDesc.trim(), users: 0, system: false }]);
-    setRolePerms(prev => ({ ...prev, [id]: new Set() }));
+    const nextRoles = [...roles, { id, name: newRoleName.trim(), description: newRoleDesc.trim(), users: 0, system: false }];
+    const nextPerms = { ...rolePerms, [id]: new Set<string>() };
+    persistRoles(nextRoles, nextPerms);
     setSelectedId(id);
     setNewRoleName(''); setNewRoleDesc(''); setAddingRole(false);
   };
 
   const removeRole = (id: string) => {
-    setRoles(rs => rs.filter(r => r.id !== id));
-    setRolePerms(prev => { const n = { ...prev }; delete n[id]; return n; });
-    if (selectedId === id) setSelectedId(roles.find(r => r.id !== id)?.id ?? '');
+    const nextRoles = roles.filter(r => r.id !== id);
+    const nextPerms = { ...rolePerms };
+    delete nextPerms[id];
+    persistRoles(nextRoles, nextPerms);
+    if (selectedId === id) setSelectedId(nextRoles[0]?.id ?? '');
   };
 
   const saveDesc = (id: string) => {
-    setRoles(rs => rs.map(r => r.id === id ? { ...r, description: editDesc } : r));
+    const nextRoles = roles.map(r => r.id === id ? { ...r, description: editDesc } : r);
+    persistRoles(nextRoles, rolePerms);
     setEditingDesc(null);
   };
 
   const grantedCount = perms.size;
   const totalCount = ALL_PERMS.length;
+  const advPermsEnabled = tenantConfig?.modules?.advanced_permissions === true;
 
   return (
     <div className="flex min-h-full">
@@ -1020,6 +1129,17 @@ export function PermissionsTab() {
       </div>
 
       <div className="flex-1 px-8 py-6 overflow-auto">
+        <div className="mb-4 px-3 py-2 rounded-lg bg-theme-bg border border-theme-border flex items-center justify-between text-theme-xs">
+          <span className="text-theme-text-muted">
+            <strong>Scope Inheritance (Modules → Advanced Permissions):</strong>{' '}
+            {advPermsEnabled
+              ? 'Active — Roles can be scoped to specific Organizations & Locations with hierarchical inheritance.'
+              : 'Tenant-wide only — Enable "Advanced Permissions" in the Modules tab to scope roles per Organization or Location.'}
+          </span>
+          <Badge color={advPermsEnabled ? 'green' : 'slate'}>
+            {advPermsEnabled ? 'Scoped Inheritance ON' : 'Global Scope'}
+          </Badge>
+        </div>
         {role && (
           <>
             <div className="flex items-start justify-between mb-6">
@@ -1058,9 +1178,17 @@ export function PermissionsTab() {
             </div>
 
             <div className="space-y-5">
-              {PERM_GROUPS.map(({ group, perms: groupPerms }) => (
-                <div key={group}>
-                  <p className="text-theme-xs font-semibold text-theme-text-subtle uppercase tracking-wider mb-2">{group}</p>
+              {PERM_GROUPS.map(({ group, perms: groupPerms }) => {
+                const modDep = GROUP_TO_MODULE_KEY[group];
+                const isModOff = modDep && tenantConfig?.modules?.[modDep.key] === false;
+                return (
+                <div key={group} className={isModOff ? 'opacity-60' : ''}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-theme-xs font-semibold text-theme-text-subtle uppercase tracking-wider">{group}</p>
+                    {isModOff && (
+                      <Badge color="amber">Module "{modDep.label}" disabled in Modules</Badge>
+                    )}
+                  </div>
                   <div className="border border-theme-border rounded-lg overflow-hidden">
                     {groupPerms.map((p, i) => {
                       const granted = perms.has(p.id);
@@ -1077,7 +1205,8 @@ export function PermissionsTab() {
                     })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}
@@ -1103,7 +1232,7 @@ interface ApiUserItem {
 }
 
 export function UsersTab() {
-  const { isOrg } = useContext(SettingsContext);
+  const { isOrg, tenantConfig } = useContext(SettingsContext);
   const { data: apiUsersData } = useApiQuery<PagedResponse<ApiUserItem> | ApiUserItem[]>('/users/?limit=100');
   const [users, setUsers] = useState<OrgUser[]>([
     { id: '1', name: 'Ivan Horvat',        email: 'ivan.horvat@posta.hr',        role: 'Super Admin',   roleSource: 'manual', status: 'active',      lastLogin: '2026-04-12 09:14' },
@@ -1128,7 +1257,10 @@ export function UsersTab() {
     })));
   }, [apiUsersData]);
 
-  const ROLES = ['Super Admin', 'Asset Manager', 'IT Technician', 'Warehouse', 'Viewer'];
+  const ROLES = Array.from(new Set([
+    'Super Admin', 'Asset Manager', 'IT Technician', 'Warehouse', 'Viewer',
+    ...(tenantConfig?.settings?.roles_custom?.map(r => r.name) ?? []),
+  ]));
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Building2, Shield, KeyRound, Puzzle, Plug, Layers, Hash, Database,
   Award, Users, Bot, FileText, Tag, ChevronDown,
   Plus, Check, X, BarChart2, UserCog,
 } from 'lucide-react';
 import {
-  SettingsContext, AssetCategory, NamingSchema, TenantConfigData, OrgScopeItem,
-  INITIAL_CATEGORIES, INITIAL_NAMING_SCHEMAS, apiFetch,
+  SettingsContext, AssetCategory, NamingSchema, ReferenceGroup, TenantConfigData, OrgScopeItem,
+  INITIAL_CATEGORIES, INITIAL_NAMING_SCHEMAS, INITIAL_REFERENCE_GROUPS, apiFetch,
 } from '../components/settings/SettingsShared';
 import type { PagedResponse, OrganizationResponse } from '../types/api';
 import {
@@ -51,11 +52,11 @@ const NAV: NavGroup[] = [
   { group: 'Operations', items: [
     { id: 'certificates', label: 'Certificates & PKI', icon: <Award size={15} /> },
     { id: 'reports',      label: 'Reports',            icon: <BarChart2 size={15} /> },
-    { id: 'automation',   label: 'Automation',         icon: <Bot size={15} />,      badge: 'soon' },
+    { id: 'automation',   label: 'Automation',         icon: <Bot size={15} /> },
     { id: 'audit',        label: 'Audit Log',          icon: <FileText size={15} /> },
   ]},
   { group: 'Hardware', items: [
-    { id: 'printing', label: 'Barcode & Printing', icon: <Tag size={15} />, badge: 'soon' },
+    { id: 'printing', label: 'Barcode & Printing', icon: <Tag size={15} /> },
   ]},
 ];
 
@@ -87,9 +88,10 @@ const TAB_COMPONENTS: Record<NavId, React.FC> = {
   reports: ReportsTab,
 };
 
-const FULL_HEIGHT_TABS: NavId[] = ['sso', 'permissions', 'reports'];
+const FULL_HEIGHT_TABS: NavId[] = ['sso', 'permissions', 'reports', 'printing'];
 
-export default function TenantSettings() {
+export default function TenantSettings({ type }: { type?: 'tenant' | 'org' }) {
+  const { orgId } = useParams<{ orgId?: string }>();
   const [active, setActive] = useState<NavId>('general');
   const [orgs, setOrgs] = useState<OrgScopeItem[]>([DEFAULT_TENANT_SCOPE]);
   const [selectedOrg, setSelectedOrg] = useState<OrgScopeItem>(DEFAULT_TENANT_SCOPE);
@@ -98,7 +100,20 @@ export default function TenantSettings() {
   const [newOrgName, setNewOrgName] = useState('');
   const [assetCategories, setAssetCategories] = useState<AssetCategory[]>(INITIAL_CATEGORIES);
   const [namingSchemas,   setNamingSchemas]   = useState<NamingSchema[]>(INITIAL_NAMING_SCHEMAS);
+  const [referenceGroups, setReferenceGroups] = useState<ReferenceGroup[]>(INITIAL_REFERENCE_GROUPS);
   const [tenantConfig, setTenantConfig] = useState<TenantConfigData | null>(null);
+
+  const saveTenantSettings = useCallback(async (patch: Record<string, unknown>) => {
+    try {
+      const updated = await apiFetch<TenantConfigData>('/tenants/config/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      setTenantConfig(updated);
+    } catch {
+      // Keep local state if offline
+    }
+  }, []);
 
   const loadOrgs = useCallback((tName?: string) => {
     const rootItem: OrgScopeItem = {
@@ -119,20 +134,33 @@ export default function TenantSettings() {
         }));
         const all = [rootItem, ...mapped];
         setOrgs(all);
+        if (type === 'org' && orgId) {
+          const matchedOrg = mapped.find(x => x.id === orgId);
+          if (matchedOrg) {
+            setSelectedOrg(matchedOrg);
+            return;
+          }
+        }
         setSelectedOrg(prev => all.find(x => x.id === prev.id) ?? rootItem);
       })
       .catch(() => {
         setOrgs([rootItem]);
         setSelectedOrg(prev => prev.isTenant ? rootItem : prev);
       });
-  }, [tenantConfig?.name]);
+  }, [tenantConfig?.name, type, orgId]);
 
   useEffect(() => {
     apiFetch<TenantConfigData>('/tenants/config')
       .then((cfg) => {
         setTenantConfig(cfg);
+        if (cfg.settings?.asset_categories && Array.isArray(cfg.settings.asset_categories) && cfg.settings.asset_categories.length > 0) {
+          setAssetCategories(cfg.settings.asset_categories);
+        }
         if (cfg.settings?.naming_schemas && Array.isArray(cfg.settings.naming_schemas) && cfg.settings.naming_schemas.length > 0) {
           setNamingSchemas(cfg.settings.naming_schemas);
+        }
+        if (cfg.settings?.reference_groups && Array.isArray(cfg.settings.reference_groups) && cfg.settings.reference_groups.length > 0) {
+          setReferenceGroups(cfg.settings.reference_groups);
         }
         loadOrgs(cfg.name);
       })
@@ -175,7 +203,21 @@ export default function TenantSettings() {
   };
 
   return (
-    <SettingsContext.Provider value={{ isOrg, selectedOrg, refreshOrgs: () => loadOrgs(), assetCategories, setAssetCategories, namingSchemas, setNamingSchemas, tenantConfig, setTenantConfig }}>
+    <SettingsContext.Provider value={{
+      isOrg,
+      selectedOrg,
+      orgs,
+      refreshOrgs: () => loadOrgs(),
+      assetCategories,
+      setAssetCategories,
+      namingSchemas,
+      setNamingSchemas,
+      referenceGroups,
+      setReferenceGroups,
+      tenantConfig,
+      setTenantConfig,
+      saveTenantSettings,
+    }}>
       <div className="flex h-full bg-theme-bg text-theme-text">
         <aside className="w-56 shrink-0 border-r border-theme-border bg-theme-surface flex flex-col">
           <div className="p-3 border-b border-theme-border relative">
@@ -238,12 +280,15 @@ export default function TenantSettings() {
                   <div className="space-y-0.5">
                     {visibleItems.map((item) => {
                       const isActive = active === item.id;
+                      const isModDisabled = (item.id === 'certificates' && tenantConfig?.modules?.certificates === false)
+                        || (item.id === 'reports' && tenantConfig?.modules?.reports === false);
+                      const badgeText = isModDisabled ? 'off' : item.badge;
                       return (
                         <button key={item.id} onClick={() => setActive(item.id)}
                           className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left transition-colors text-theme-sm ${isActive ? 'bg-theme-primary/10 text-theme-primary font-medium' : 'text-theme-text-muted hover:text-theme-text hover:bg-theme-surface-hover'}`}>
                           <span className={isActive ? 'text-theme-primary' : 'text-theme-text-subtle'}>{item.icon}</span>
                           <span className="flex-1 truncate">{item.label}</span>
-                          {item.badge && <span className="text-[10px] px-1.5 py-0.5 rounded bg-theme-bg text-theme-text-subtle border border-theme-border">{item.badge}</span>}
+                          {badgeText && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${isModDisabled ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-theme-bg text-theme-text-subtle border-theme-border'}`}>{badgeText}</span>}
                         </button>
                       );
                     })}
